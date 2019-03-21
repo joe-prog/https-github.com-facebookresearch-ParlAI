@@ -28,8 +28,8 @@ def _create_embeddings(dictionary, embedding_size, padding_idx):
     return e
 
 
-def _build_encoder(opt, dictionary, embedding=None, padding_idx=None, reduction=True,
-                   n_positions=1024):
+def _build_encoder(opt, dictionary, embedding=None, padding_idx=None, reduction=True,reduction_type=None,
+                   n_positions=1024,gelu_activation=False,embedding_normalization=False):
     return TransformerEncoder(
         n_heads=opt['n_heads'],
         n_layers=opt['n_layers'],
@@ -44,7 +44,10 @@ def _build_encoder(opt, dictionary, embedding=None, padding_idx=None, reduction=
         learn_positional_embeddings=opt.get('learn_positional_embeddings', False),
         embeddings_scale=opt['embeddings_scale'],
         reduction=reduction,
+        reduction_type=reduction_type,
         n_positions=n_positions,
+        gelu_activation = gelu_activation,
+        embedding_normalization = embedding_normalization
     )
 
 
@@ -65,6 +68,9 @@ def _build_decoder(opt, dictionary, embedding=None, padding_idx=None,
         embeddings_scale=opt['embeddings_scale'],
         n_positions=n_positions,
     )
+
+def gelu(tensor):
+    return 0.5 * tensor * (1.0 + torch.erf(tensor/math.sqrt(2.0)))
 
 
 class TransformerMemNetModel(nn.Module):
@@ -99,9 +105,27 @@ class TransformerMemNetModel(nn.Module):
         if n_positions < 0:
             raise ValueError('n_positions must be positive')
 
+        if opt.get('gelu_activation'):
+            self.gelu_activation = opt['gelu_activation']
+        else:
+            self.gelu_activation = False
+
+        if opt.get('embedding_normalization'):
+            self.embedding_normalization = opt['embedding_normalization']
+        else:
+            self.embedding_normalization = False
+
+        if opt.get('reduction_type'):
+            self.reduction_type = opt['reduction_type']
+        else:
+            self.reduction_type = None
+
+
         self.context_encoder = _build_encoder(
             opt, dictionary, self.embeddings, self.pad_idx,
-            n_positions=n_positions,
+            reduction = True, reduction_type = self.reduction_type,
+            n_positions = n_positions, gelu_activation = self.gelu_activation,
+            embedding_normalization = self.embedding_normalization
         )
 
         if opt.get('share_encoders'):
@@ -110,8 +134,10 @@ class TransformerMemNetModel(nn.Module):
             )
         else:
             self.cand_encoder = _build_encoder(
-                opt, dictionary, self.embeddings, self.pad_idx, reduction=True,
-                n_positions=n_positions,
+                opt, dictionary, self.embeddings, self.pad_idx,
+                reduction = True, reduction_type = self.reduction_type,
+                n_positions = n_positions, gelu_activation = self.gelu_activation,
+                embedding_normalization = self.embedding_normalization
             )
 
         # build memory encoder
@@ -239,7 +265,10 @@ class TransformerEncoder(nn.Module):
         learn_positional_embeddings=False,
         embeddings_scale=False,
         reduction=True,
-        n_positions=1024
+        reduction_type=None,
+        n_positions=1024,
+        gelu_activation=False,
+        embedding_normalization=False
     ):
         super(TransformerEncoder, self).__init__()
 
@@ -250,9 +279,11 @@ class TransformerEncoder(nn.Module):
         self.dim = embedding_size
         self.embeddings_scale = embeddings_scale
         self.reduction = reduction
+        self.reduction_type = reduction_type
         self.padding_idx = padding_idx
         # this is --dropout, not --relu-dropout or --attention-dropout
         self.dropout = nn.Dropout(p=dropout)
+        self.embedding_normalization = embedding_normalization
 
         self.out_dim = embedding_size
         assert embedding_size % n_heads == 0, \
@@ -283,6 +314,10 @@ class TransformerEncoder(nn.Module):
         else:
             nn.init.normal_(self.position_embeddings.weight, 0, embedding_size ** -0.5)
 
+        #embedding normalization
+        if self.embedding_normalization:
+            self.layer_norm_emb = nn.LayerNorm(self.dim, eps=1e-12)
+
         # build the model
         self.layers = nn.ModuleList()
         for _ in range(self.n_layers):
@@ -291,6 +326,7 @@ class TransformerEncoder(nn.Module):
                 attention_dropout=attention_dropout,
                 relu_dropout=relu_dropout,
                 dropout=dropout,
+                gelu_activation=gelu_activation
             ))
 
     def forward(self, input):
@@ -307,6 +343,8 @@ class TransformerEncoder(nn.Module):
         if self.embeddings_scale:
             tensor = tensor * np.sqrt(self.dim)
         tensor = tensor + self.position_embeddings(positions).expand_as(tensor)
+        if self.embedding_normalization:
+            tensor = self.layer_norm_emb(tensor)
         # --dropout on the embeddings
         tensor = self.dropout(tensor)
 
@@ -315,9 +353,14 @@ class TransformerEncoder(nn.Module):
             tensor = self.layers[i](tensor, mask)
 
         if self.reduction:
-            divisor = mask.float().sum(dim=1).unsqueeze(-1).clamp(min=1e-20)
-            output = tensor.sum(dim=1) / divisor
-            return output
+            if self.reduction_type == 'first' :
+                return tensor[:,0,:]
+            elif self.reduction_type == 'max' :
+                return tensor.max(dim=1)[0]
+            else :
+                divisor = mask.float().sum(dim=1).unsqueeze(-1).clamp(min=1e-20)
+                output = tensor.sum(dim=1) / divisor
+                return output
         else:
             output = tensor
             return output, mask
@@ -332,17 +375,19 @@ class TransformerEncoderLayer(nn.Module):
         attention_dropout=0.0,
         relu_dropout=0.0,
         dropout=0.0,
+        gelu_activation=False
     ):
         super().__init__()
         self.dim = embedding_size
         self.ffn_dim = ffn_size
+        self.gelu_activation = gelu_activation
         self.attention = MultiHeadAttention(
             n_heads, embedding_size,
             dropout=attention_dropout,  # --attention-dropout
         )
-        self.norm1 = nn.LayerNorm(embedding_size)
-        self.ffn = TransformerFFN(embedding_size, ffn_size, relu_dropout=relu_dropout)
-        self.norm2 = nn.LayerNorm(embedding_size)
+        self.norm1 = nn.LayerNorm(embedding_size,eps=1e-12)
+        self.ffn = TransformerFFN(embedding_size, ffn_size, relu_dropout=relu_dropout,gelu_activation=self.gelu_activation)
+        self.norm2 = nn.LayerNorm(embedding_size,eps=1e-12)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, tensor, mask):
@@ -677,16 +722,20 @@ class MultiHeadAttention(nn.Module):
 
 
 class TransformerFFN(nn.Module):
-    def __init__(self, dim, dim_hidden, relu_dropout=0):
+    def __init__(self, dim, dim_hidden, relu_dropout=0,gelu_activation=False):
         super(TransformerFFN, self).__init__()
         self.relu_dropout = nn.Dropout(p=relu_dropout)
+        self.gelu_activation = gelu_activation
         self.lin1 = nn.Linear(dim, dim_hidden)
         self.lin2 = nn.Linear(dim_hidden, dim)
         nn.init.xavier_uniform_(self.lin1.weight)
         nn.init.xavier_uniform_(self.lin2.weight)
 
     def forward(self, x):
-        x = F.relu(self.lin1(x))
+        if self.gelu_activation:
+            x = gelu(self.lin1(x))
+        else:
+            x = F.relu(self.lin1(x))
         x = self.relu_dropout(x)  # --relu-dropout
         x = self.lin2(x)
         return x

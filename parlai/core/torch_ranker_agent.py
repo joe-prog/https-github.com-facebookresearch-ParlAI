@@ -62,6 +62,19 @@ class TorchRankerAgent(TorchAgent):
                  ' expects to be accompanied by a *.opt file.'
         )
         agent.add_argument(
+            '--embedding-normalization', type='bool', default=False,
+            help='normalization after embeddings for transformer. True or False'
+        )
+        agent.add_argument(
+            '--gelu-activation', type='bool', default=False,
+            help='if True use gelu instead of Relu in the FFN. is False use relu'
+        )
+        agent.add_argument(
+            '--reduction-type', type=str, default=None,
+            choices=[None, 'first', 'max', 'mean'],
+            help='Type of reduction at the end of transformer'
+        )
+        agent.add_argument(
             '--ignore-bad-candidates', type='bool', default=False,
             help='Ignore examples for which the label is not present in the '
                  'label candidates. Default behavior results in RuntimeError. ')

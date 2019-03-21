@@ -15,7 +15,6 @@ Contains the following main utilities:
 
 See below for documentation on each specific tool.
 """
-
 from torch import optim
 from collections import deque
 import json
