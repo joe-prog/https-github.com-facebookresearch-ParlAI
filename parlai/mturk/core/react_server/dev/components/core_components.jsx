@@ -1143,7 +1143,7 @@ class RightPane extends React.Component {
     };
 
     return (
-      <div id="right-pane" style={right_pane}>
+      <div id="right-pane" className={'col-8'} style={right_pane}>
         <XChatPane
           message_count={this.props.messages.length}
           {...this.props}
@@ -1181,6 +1181,10 @@ class StaticRightPane extends React.Component {
     let XContentPane = getCorrectComponent('XContentPane', v_id);
     let XDoneResponse = getCorrectComponent('XDoneResponse', v_id);
 
+    let done_button = null;
+    if (this.props.task_done) {
+      done_button = <XDoneResponse {...this.props} onInputResize={() => {}}/>;
+    }
     // TODO move to CSS
     let right_pane = {
       minHeight: '100%',
@@ -1190,9 +1194,9 @@ class StaticRightPane extends React.Component {
     };
 
     return (
-      <div id="right-pane" style={right_pane}>
+      <div id="right-pane" className={'col-8'} style={right_pane}>
         <XContentPane {...this.props} />
-        <XDoneResponse {...this.props} onInputResize={() => {}}/>
+        {done_button}
       </div>
     );
   }
@@ -1272,7 +1276,7 @@ class LeftPane extends React.Component {
       overflow: 'auto',
     };
     let XTaskDescription = getCorrectComponent('XTaskDescription', v_id);
-    let pane_size = this.props.is_cover_page ? 'col-xs-12' : 'col-xs-4';
+    let pane_size = this.props.is_cover_page ? 'col-12' : 'col-4';
     let has_context = this.props.task_data.has_context;
     if (this.props.is_cover_page || !has_context) {
       return (

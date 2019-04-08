@@ -12,23 +12,23 @@
     "bootstrap": "^4.3.1",
     "fetch": "^1.1.0",
     "jquery": "^3.0.0",
-    "popper.js": "^1.14.4",
-    "rc-slider": "^8.6.3",
-    "react": "^16.5.2",
-    "react-bootstrap": "^0.32.4",
-    "react-dom": "^16.5.2",
-    "react-table": "^6.8.6"
+    "popper.js": "^1.15.0",
+    "rc-slider": "^8.6.9",
+    "react": "^16.8.6",
+    "react-bootstrap": "1.0.0-beta.6",
+    "react-dom": "^16.8.6",
+    "react-table": "^6.9.2"
   },
   "devDependencies": {
-    "@babel/cli": "^7.1.0",
-    "@babel/core": "^7.1.0",
-    "@babel/plugin-proposal-class-properties": "^7.1.0",
-    "@babel/preset-env": "^7.1.0",
+    "@babel/cli": "^7.4.3",
+    "@babel/core": "^7.4.3",
+    "@babel/plugin-proposal-class-properties": "^7.4.0",
+    "@babel/preset-env": "^7.4.3",
     "@babel/preset-react": "^7.0.0",
-    "babel-loader": "^8.0.2",
-    "css-loader": "^1.0.0",
-    "style-loader": "^0.23.0",
-    "webpack": "^4.19.1",
-    "webpack-cli": "^3.1.1"
+    "babel-loader": "^8.0.5",
+    "css-loader": "^1.0.1",
+    "style-loader": "^0.23.1",
+    "webpack": "^4.29.6",
+    "webpack-cli": "^3.3.0"
   }
 }
