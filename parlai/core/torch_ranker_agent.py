@@ -24,7 +24,7 @@ class TorchRankerAgent(TorchAgent):
         agent = argparser.add_argument_group('TorchRankerAgent')
         agent.add_argument(
             '-cands', '--candidates', type=str, default='inline',
-            choices=['batch', 'inline', 'fixed', 'batch-all-cands'],
+            choices=['batch', 'inline', 'fixed', 'batch-all-cands', 'inline_or_batch'],
             help='The source of candidates during training '
                  '(see TorchRankerAgent._build_candidates() for details).')
         agent.add_argument(
@@ -344,6 +344,7 @@ class TorchRankerAgent(TorchAgent):
             * inline: batch_size lists, one list per example
                 If each example comes with a list of possible candidates, use those.
                 Note: With this setting, each example will have its own candidate set.
+            * inline_or_batch: uses inline if available, otherwise switches to batch.
             * fixed: one global candidate list, provided in a file from the user
                 If self.fixed_candidates is not None, use a set of fixed candidates for
                 all examples.
@@ -359,6 +360,12 @@ class TorchRankerAgent(TorchAgent):
         if label_vecs is not None:
             assert label_vecs.dim() == 2
 
+        if source == 'inline_or_batch':
+            if batch.candidate_vecs is None:
+                source = 'batch'
+            else:
+                source = 'inline'
+                
         if source == 'batch':
             warn_once(
                 '[ Executing {} mode with batch labels as set of candidates. ]'
