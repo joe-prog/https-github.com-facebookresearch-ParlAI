@@ -49,7 +49,7 @@ def maintain_dialog_history(history, observation, reply='',
         history['persona'] = []
         history['episode_done'] = False
         history['labels'] = []
-
+        
     if history['episode_done']:
         history['dialog'].clear()
         history['persona'] = []
@@ -258,6 +258,7 @@ class KvmemnnAgent(Agent):
             self.fixedX = None
             path = opt['model_file'] + '.candspair'
             if os.path.isfile(path) and opt.get('loadcands') != False:
+                import pdb; pdb.set_trace()
                 print("[loading candidates: " + path + "*]")
                 fc = load_cands(path)
                 fcs = []

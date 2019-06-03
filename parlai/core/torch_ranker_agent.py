@@ -30,8 +30,7 @@ class TorchRankerAgent(TorchAgent):
         agent.add_argument(
             '-ecands', '--eval-candidates', type=str, default='inline',
             choices=['batch', 'inline', 'fixed', 'vocab', 'batch-all-cands'],
-            help='The source of candidates during evaluation (defaults to the same'
-                 'value as --candidates if no flag is given)')
+            help='The source of candidates during evaluation (defaults to inline)')
         agent.add_argument(
             '-fcp', '--fixed-candidates-path', type=str,
             help='A text file of fixed candidates to use for all examples, one '
@@ -300,7 +299,7 @@ class TorchRankerAgent(TorchAgent):
         cands_key = ('candidates' if 'labels' in obs else
                      'eval_candidates' if 'eval_labels' in obs else None)
         if (cands_key is not None and self.opt[cands_key] not in
-                ['inline', 'batch-all-cands']):
+                ['inline', 'batch-all-cands', 'inline_or_batch']):
             # vectorize label candidates if and only if we are using inline
             # candidates
             return obs
