@@ -31,20 +31,29 @@ class BertQaAgent(Agent):
 
         super().__init__(opt, shared)
 
-        self.dict = DictionaryAgent(opt)
+        if not shared:
+            self.tokenizer = BertTokenizer.from_pretrained(
+                opt["bert_model"], do_lower_case=opt["do_lower_case"]
+            )
 
-        self.tokenizer = BertTokenizer.from_pretrained(
-            opt["bert_model"], do_lower_case=opt["do_lower_case"]
-        )
+            # Prepare model
+            self.model = BertForQuestionAnswering.from_pretrained(
+                opt["bert_model"],
+                cache_dir=os.path.join(
+                    str(PYTORCH_PRETRAINED_BERT_CACHE),
+                    "distributed_{}".format(opt["local_rank"]),
+                ),
+            )
+        else:
+            self.tokenizer = shared['tokenizer']
+            self.model = shared['model']
 
-        # Prepare model
-        self.model = BertForQuestionAnswering.from_pretrained(
-            opt["bert_model"],
-            cache_dir=os.path.join(
-                str(PYTORCH_PRETRAINED_BERT_CACHE),
-                "distributed_{}".format(opt["local_rank"]),
-            ),
-        )
+    def share(self):
+        """Share internal states."""
+        shared = super().share()
+        shared['tokenizer'] = self.tokenizer
+        shared['model'] = self.model
+        return shared
 
     @staticmethod
     def dictionary_class():
