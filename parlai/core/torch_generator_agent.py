@@ -670,6 +670,7 @@ class TorchGeneratorAgent(TorchAgent):
                 cand_choices.append([batch.candidates[i][o] for o in ordering])
 
         text = [self._v2t(p) for p in preds] if preds is not None else None
+        
         return Output(text, cand_choices)
 
     def beam_search(self, model, batch, beam_size, start=1, end=2,

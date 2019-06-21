@@ -67,7 +67,7 @@ class TransformerRankerAgent(TorchRankerAgent):
     @classmethod
     def add_cmdline_args(cls, argparser):
         """Add command-line arguments specifically for this agent."""
-        super(TransformerRankerAgent, cls).add_cmdline_args(argparser)
+        #super(TransformerRankerAgent, cls).add_cmdline_args(argparser)
         agent = argparser.add_argument_group('Transformer Arguments')
         add_common_cmdline_args(agent)
         # memory and knowledge arguments
