@@ -7,75 +7,74 @@ from parlai.core.torch_agent import TorchAgent, Output
 from .bert_span_dictionary import BertSpanDictionaryAgent
 from parlai.core.utils import round_sigfigs
 from parlai.zoo.bert.build import download
+from parlai.core.utils import neginf
+from parlai.agents.transformer.transformer import TransformerRankerAgent
+from parlai.agents.transformer.modules import TransformerEncoder
+from parlai.agents.transformer.modules import get_n_positions_from_options
+from parlai.core.distributed_utils import is_distributed
 import os
 import torch
 import collections
 
-try:
-    from pytorch_pretrained_bert.modeling import BertForQuestionAnswering
-    from pytorch_pretrained_bert.optimization import BertAdam
-except ImportError:
-    raise Exception(
-        (
-            "BERT rankers needs pytorch-pretrained-BERT installed. \n "
-            "pip install pytorch-pretrained-bert"
-        )
-    )
+DEBUGMODE=False
 
+_PrelimPrediction = collections.namedtuple(
+    "PrelimPrediction", ["start_index", "end_index", "start_logit", "end_logit"]
+)
+
+_NbestPrediction = collections.namedtuple(
+    "NbestPrediction", ["text", "start_logit", "end_logit"]
+)
 
 class BertQaAgent(TorchAgent):
-    """
-    QA based on Hugging Face BERT implementation.
+    """ QA based on Bert
     """
 
     def __init__(self, opt, shared=None):
-        # download pretrained models
-        download(opt["datapath"], bert_model=opt["bert_model"])
-        self.pretrained_path = os.path.join(
-            opt["datapath"],
-            "models",
-            "bert_models",
-            "{}.tar.gz".format(opt["bert_model"]),
-        )
-        opt["pretrained_path"] = self.pretrained_path
-
-        init_model, _ = self._get_init_model(opt, shared)
+        init_model, is_finetune = self._get_init_model(opt, shared)
         super().__init__(opt, shared)
+
+        if shared:
+            self.model = shared['model']
+            self.metrics = shared['metrics']
+            states = None
+        else:
+            # Note: we cannot change the type of metrics ahead of time, so you
+            # should correctly initialize to floats or ints here
+            self.metrics = {
+                'loss': 0.0,
+                'examples': 0,
+                'rank': 0.0,
+                'mrr': 0.0,
+                'train_accuracy': 0.0,
+            }
+            self.build_model()
+            if self.fp16:
+                self.model = self.model.half()
+            if init_model:
+                print('Loading existing model parameters from ' + init_model)
+                states = self.load(init_model)
+            else:
+                states = {}
+        if self.use_cuda:
+            self.model.cuda()
 
         # set up model and optimizers
         if shared:
-            self.model = shared["model"]
-            self.metrics = shared["metrics"]
-        else:
-            self.build_model()
-            if init_model:
-                print("Loading existing model parameters from " + init_model)
-                self.load(init_model)
-            self.metrics = {"loss": 0.0, "examples": 0}
-        if self.use_cuda:
-            self.model.cuda()
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-        if shared:
             # We don't use get here because hasattr is used on optimizer later.
-            if "optimizer" in shared:
-                self.optimizer = shared["optimizer"]
+            if 'optimizer' in shared:
+                self.optimizer = shared['optimizer']
         else:
             optim_params = [p for p in self.model.parameters() if p.requires_grad]
-            self.init_optim(optim_params)
-            self.build_lr_scheduler()
+            self.init_optim(
+                optim_params, states.get('optimizer'), states.get('optimizer_type')
+            )
+            self.build_lr_scheduler(states, hard_reset=is_finetune)
 
-    def _clean_WordPieces(self, text):
-        # De-tokenize WordPieces that have been split off.
-        text = text.replace(" ##", "")
-        text = text.replace("##", "")
-
-        # Clean whitespace
-        text = text.strip()
-        text = " ".join(text.split())
-
-        return text
+        if shared is None and is_distributed():
+            self.model = torch.nn.parallel.DistributedDataParallel(
+                self.model, device_ids=[self.opt['gpu']], broadcast_buffers=False
+            )
 
     def _split_context_question(self, text):
         split = text.split("\n")
@@ -83,7 +82,12 @@ class BertQaAgent(TorchAgent):
         context = "\n".join(split[0:-1])
         return context, question
 
-    def _vectorize(self, observations):
+    def to_device(self, vec):
+        if self.use_cuda:
+            return vec.cuda()
+        return vec
+
+    def _vectorize_no_device(self, observations):
         """Convert a list of observations into input tensors for the BertForQuestionAnswering model ."""
 
         b_tokens_ids = []
@@ -97,9 +101,9 @@ class BertQaAgent(TorchAgent):
             context, question = self._split_context_question(obs["text"])
 
             question_tokens_id = (
-                [self.dict.start_idx]
+                [self.START_IDX]
                 + self.dict.txt2vec(question)
-                + [self.dict.end_idx]
+                + [self.END_IDX]
             )
 
             segment_ids = [0] * len(question_tokens_id)
@@ -112,14 +116,14 @@ class BertQaAgent(TorchAgent):
             else:
                 # valid / test
                 valid_obs = True
-                context_tokens_ids = self.dict.txt2vec(context)
+                context_tokens_ids = [self.START_IDX] + self.dict.txt2vec(context) + [self.END_IDX]
                 context_start_position = 0
                 context_end_position = len(context_tokens_ids)
 
             segment_ids += [1] * len(context_tokens_ids)
 
-            start_position = context_start_position + len(question_tokens_id) + 1
-            end_position = context_end_position + len(question_tokens_id) + 1
+            start_position = context_start_position + len(question_tokens_id)
+            end_position = context_end_position + len(question_tokens_id)
             tokens_ids = question_tokens_id + context_tokens_ids
 
             if self.text_truncate > 0:
@@ -128,7 +132,7 @@ class BertQaAgent(TorchAgent):
                     tokens_ids = tokens_ids[-self.text_truncate:]
                     segment_ids = segment_ids[-self.text_truncate:]
 
-                    num_tokens_removed = original_len - len(tokens_ids) - 1
+                    num_tokens_removed = original_len - len(tokens_ids)
 
                     if start_position <= num_tokens_removed:
                         # answer truncated - invalid data point
@@ -138,10 +142,6 @@ class BertQaAgent(TorchAgent):
                     else:
                         start_position -= num_tokens_removed
                         end_position -= num_tokens_removed
-
-            # close the sentence with end_idx
-            tokens_ids += [self.dict.end_idx]
-            segment_ids.append(1)
 
             b_tokens_ids.append(tokens_ids)
             b_start_position.append(start_position)
@@ -157,13 +157,13 @@ class BertQaAgent(TorchAgent):
             b_tokens_ids, b_valid_obs, b_segment_ids
         ):
 
-            if valid_obs:
-                # The mask has 1 for real tokens and 0 for padding tokens. Only real
-                # tokens are attended to.
-                input_mask = [1] * len(tokens_ids)
-            else:
-                # invalid data point
-                input_mask = [0] * len(tokens_ids)
+            # if valid_obs:
+            #     # The mask has 1 for real tokens and 0 for padding tokens. Only real
+            #     # tokens are attended to.
+            input_mask = [1] * len(tokens_ids)
+            # else:
+            #     # invalid data point
+            #     input_mask = [0] * len(tokens_ids)
 
             # Zero-pad up to the sequence length.
             while len(tokens_ids) < max_tokens_length:
@@ -176,14 +176,25 @@ class BertQaAgent(TorchAgent):
             assert len(tokens_ids) == max_tokens_length
             assert len(input_mask) == max_tokens_length
             assert len(segment_ids) == max_tokens_length
-
         return (
-            torch.tensor(b_tokens_ids, dtype=torch.long).to(self.device),
-            torch.tensor(b_segment_ids, dtype=torch.long).to(self.device),
-            torch.tensor(b_input_mask, dtype=torch.long).to(self.device),
-            torch.tensor(b_start_position, dtype=torch.long).to(self.device),
-            torch.tensor(b_end_position, dtype=torch.long).to(self.device),
+            b_tokens_ids,
+            b_segment_ids,
+            b_input_mask,
+            b_start_position,
+            b_end_position,
         )
+
+    def _vectorize(self, observations):
+        """Convert a list of observations into input tensors for the BertForQuestionAnswering model ."""
+        vecs = self._vectorize_no_device(observations)
+        return(
+            self.to_device(torch.tensor(vecs[0], dtype=torch.long)),
+            self.to_device(torch.tensor(vecs[1], dtype=torch.long)),
+            self.to_device(torch.tensor(vecs[2], dtype=torch.long)),
+            self.to_device(torch.tensor(vecs[3], dtype=torch.long)),
+            self.to_device(torch.tensor(vecs[4], dtype=torch.long)),
+        )
+
 
     def _get_best_indexes(self, logits, n_best_size):
         """Get the n-best logits from a list."""
@@ -203,9 +214,7 @@ class BertQaAgent(TorchAgent):
         start_indexes = self._get_best_indexes(start_logits, self.opt["n_best_size"])
         end_indexes = self._get_best_indexes(end_logits, self.opt["n_best_size"])
 
-        _PrelimPrediction = collections.namedtuple(
-            "PrelimPrediction", ["start_index", "end_index", "start_logit", "end_logit"]
-        )
+
         prelim_predictions = []
 
         for start_index in start_indexes:
@@ -223,8 +232,8 @@ class BertQaAgent(TorchAgent):
                     _PrelimPrediction(
                         start_index=start_index,
                         end_index=end_index,
-                        start_logit=start_logits[start_index],
-                        end_logit=end_logits[end_index],
+                        start_logit=start_logits[start_index].item(),
+                        end_logit=end_logits[end_index].item(),
                     )
                 )
 
@@ -234,34 +243,13 @@ class BertQaAgent(TorchAgent):
             reverse=True,
         )
 
-        _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
-            "NbestPrediction", ["text", "start_logit", "end_logit"]
-        )
-
-        nbest = []
         for pred in prelim_predictions:
-            if len(nbest) >= self.opt["n_best_size"]:
-                break
-
             if pred.start_index > 0:  # this is a non-null prediction
-                answer_tokens = self.dict.vec2txt(
+                return self.dict.vec2txt(
                     input_ids[pred.start_index:pred.end_index]
                 )
-                answer_text = self._clean_WordPieces(answer_tokens)
-                nbest.append(
-                    _NbestPrediction(
-                        text=answer_text,
-                        start_logit=pred.start_logit,
-                        end_logit=pred.end_logit,
-                    )
-                )
 
-        if len(nbest) > 0:
-            # return the best prediciton
-            return nbest[0].text
-        else:
-            # return an empty prediction
-            return ""
+        return ""
 
     def report(self):
         base = super().report()
@@ -277,31 +265,11 @@ class BertQaAgent(TorchAgent):
             base[k] = round_sigfigs(v, 4)
         return base
 
-    def train_step(self, batch):
-
-        tensors = self._vectorize(batch["observations"])
-        loss = self.model(*tensors)
-
-        if self.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
-
-        self.metrics["examples"] += len(batch["observations"])
-        self.metrics["loss"] += loss
-
-        self.backward(loss)
-        self.update_params()
-        self.zero_grad()
-
-        # predictions
-        with torch.no_grad():
-            b_input_ids, b_segment_ids, b_input_mask, _, _ = tensors
-            # print(b_input_ids)
-            # input(...)
-            b_start_logits, b_end_logits = self.model(
-                b_input_ids, b_segment_ids, b_input_mask
-            )
-
+    def get_output_from_logits(self, b_input_ids, b_start_logits, b_end_logits):
         predictions = []
+        b_input_ids = b_input_ids.cpu()
+        b_start_logits = b_start_logits.float().cpu()
+        b_end_logits = b_end_logits.float().cpu()
         for start_logits, end_logits, input_ids in zip(
             b_start_logits, b_end_logits, b_input_ids
         ):
@@ -310,27 +278,45 @@ class BertQaAgent(TorchAgent):
 
         return Output(predictions)
 
-    def eval_step(self, batch):
+    def train_step(self, batch):
 
-        b_tokens_ids, b_segment_ids, b_input_mask, b_start_context_position, _ = self._vectorize(
+        self.optimizer.zero_grad()
+        self.model.train()
+
+        (b_tokens_ids, b_segment_ids,b_mask,
+         b_start_context_position, b_end_context_position) = self._vectorize(batch["observations"])
+        b_logits = self.model(
+            b_tokens_ids, b_segment_ids
+        )
+        neg_mask = (b_mask == 0).type_as(b_logits).unsqueeze(2)
+        neg_mask *= neginf(b_logits.dtype)
+        b_logits = neg_mask + b_logits
+
+        loss_fn = torch.nn.CrossEntropyLoss()
+        logits_start = b_logits[:, :, 0]
+        logits_end = b_logits[:, :, 1]
+        loss_start = loss_fn(logits_start, b_start_context_position)
+        loss_end = loss_fn(logits_end, b_end_context_position)
+        loss = (loss_start + loss_end) / 2
+        self.metrics["examples"] += len(batch["observations"])
+        self.metrics["loss"] += loss
+        self.backward(loss)
+        self.update_params()
+        out = self.get_output_from_logits(b_tokens_ids, logits_start, logits_end)
+        return out
+
+    def eval_step(self, batch):
+        self.model.eval()
+        b_tokens_ids, b_segment_ids, _, b_start_context_position, _ = self._vectorize(
             batch["observations"]
         )
-
         with torch.no_grad():
-            b_start_logits, b_end_logits = self.model(
-                b_tokens_ids, b_segment_ids, b_input_mask
+            b_logits = self.model(
+                b_tokens_ids, b_segment_ids
             )
-
-        predictions = []
-        for start_logits, end_logits, input_ids, start_context_position in zip(
-            b_start_logits, b_end_logits, b_tokens_ids, b_start_context_position
-        ):
-            prediction = self._get_prediction(
-                start_logits, end_logits, input_ids, start_context_position
-            )
-            predictions.append(prediction)
-
-        return Output(predictions)
+        b_start_logits = b_logits[:, :, 0]
+        b_end_logits = b_logits[:, :, 1]
+        return self.get_output_from_logits(b_tokens_ids, b_start_logits, b_end_logits)
 
     def share(self):
         """Share model parameters."""
@@ -339,44 +325,24 @@ class BertQaAgent(TorchAgent):
         shared["metrics"] = self.metrics
         return shared
 
+    def reset_metrics(self):
+        """Reset metrics."""
+        super().reset_metrics()
+        self.metrics["examples"] = 0
+        self.metrics["loss"] = 0
+
+
     @staticmethod
     def add_cmdline_args(parser):
         TorchAgent.add_cmdline_args(parser)
+        TransformerRankerAgent.add_cmdline_args(parser)
         parser = parser.add_argument_group("BERT QA Arguments")
         parser.add_argument(
             "--n-best-size",
-            default=20,
+            default=16,
             type=int,
             help="The total number of n-best predictions to generate in the nbest_predictions.json "
             "output file.",
-        )
-        parser.add_argument(
-            "--bert-model",
-            default="bert-base-cased",
-            type=str,
-            help="Bert pre-trained model selected in the list: bert-base-uncased, "
-            "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
-            "bert-base-multilingual-cased, bert-base-chinese.",
-        )
-        parser.add_argument(
-            "--warmup_proportion",
-            default=0.1,
-            type=float,
-            help="Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10%% "
-            "of training.",
-        )
-        parser.add_argument(
-            "--loss_scale",
-            type=float,
-            default=0,
-            help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
-            "0 (default value): dynamic loss scaling.\n"
-            "Positive power of 2: static loss scaling value.\n",
-        )
-        parser.add_argument(
-            "--do-lower-case",
-            action="store_true",
-            help="Whether to lower case the input text. True for uncased models, False for cased models.",
         )
         parser.set_defaults(dict_maxexs=0)  # skip building dictionary
 
@@ -385,59 +351,56 @@ class BertQaAgent(TorchAgent):
         return BertSpanDictionaryAgent
 
     def build_model(self):
-        self.model = BertForQuestionAnswering.from_pretrained(self.pretrained_path)
-        self.n_gpu = 0
-        if self.use_cuda:
-            self.n_gpu = torch.cuda.device_count()
-            if self.n_gpu > 0:
-                self.model = torch.nn.DataParallel(self.model)
+        self.model = BertQAModule(self.opt, self.dict, self.NULL_IDX)
 
-    def init_optim(self, params, optim_states=None, saved_optim_type=None):
-        param_optimizer = list(self.model.named_parameters())
 
-        # hack to remove pooler, which is not used
-        # thus it produce None grad that break apex
-        param_optimizer = [n for n in param_optimizer if "pooler" not in n[0]]
+class BertQAModule(torch.nn.Module):
+    """ A simple wrapper around the transformer encoder which adds 2 linear
+        layers, which can be used as logits for the start and end position.
+    """
 
-        no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p for n, p in param_optimizer if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.01,
-            },
-            {
-                "params": [
-                    p for n, p in param_optimizer if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-        if self.fp16:
-            try:
-                from apex.optimizers import FP16_Optimizer
-                from apex.optimizers import FusedAdam
-            except ImportError:
-                raise ImportError(
-                    "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training."
-                )
+    def __init__(self, opt, dict, null_idx):
+        super(BertQAModule, self).__init__()
+        n_positions = get_n_positions_from_options(opt)
+        embeddings = torch.nn.Embedding(
+            len(dict), opt['embedding_size'], padding_idx=null_idx
+        )
+        torch.nn.init.normal_(embeddings.weight, 0, opt['embedding_size'] ** -0.5)
+        self.encoder = TransformerEncoder(
+            n_heads=opt['n_heads'],
+            n_layers=opt['n_layers'],
+            embedding_size=opt['embedding_size'],
+            ffn_size=opt['ffn_size'],
+            vocabulary_size=len(dict),
+            embedding=embeddings,
+            dropout=opt['dropout'],
+            attention_dropout=opt['attention_dropout'],
+            relu_dropout=opt['relu_dropout'],
+            padding_idx=null_idx,
+            learn_positional_embeddings=opt['learn_positional_embeddings'],
+            embeddings_scale=opt['embeddings_scale'],
+            reduction_type='none',
+            n_positions=n_positions,
+            n_segments=2,
+            activation=opt['activation'],
+            variant=opt['variant'],
+            output_scaling=opt['output_scaling'],
+        )
+        self.linear_layer = torch.nn.Linear(opt['embedding_size'], 2)
 
-            self.optimizer = FusedAdam(
-                optimizer_grouped_parameters,
-                lr=self.opt["learningrate"],
-                bias_correction=False,
-                max_grad_norm=1.0,
-            )
-            if self.opt["loss_scale"] == 0:
-                self.optimizer = FP16_Optimizer(self.optimizer, dynamic_loss_scale=True)
-            else:
-                self.optimizer = FP16_Optimizer(
-                    self.optimizer, static_loss_scale=self.opt["loss_scale"]
-                )
-        else:
-            self.optimizer = BertAdam(
-                optimizer_grouped_parameters,
-                lr=self.opt["learningrate"],
-                warmup=self.opt["warmup_proportion"],
-            )
+    def forward(self, tokens, segments):
+        """ Scores each concatenation text + candidate.
+            By default the output of masked elements is
+            -infinity
+        """
+        if DEBUGMODE:
+            vec =  tokens.new_full((tokens.size(0), tokens.size(1), 2),
+                                   0.5,
+                                   dtype=torch.half)
+            vec.requires_grad = True
+            return vec
+        encoded, mask = self.encoder(tokens, None, segments)
+        neg_mask = (mask == 0).type_as(encoded).unsqueeze(2)
+        neg_mask *= neginf(encoded.dtype)
+        res = self.linear_layer(encoded) + neg_mask
+        return res
