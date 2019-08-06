@@ -57,8 +57,24 @@ class MemnnAgent(TorchRankerAgent):
             default=False,
             help='use position encoding instead of bag of words embedding',
         )
+        arg_group.add_argument(
+            '-kv',
+            '--key-value-memories',
+            type='bool',
+            default=False,
+            help='Split memories into keys and values instead of a single item per slot.',
+        )
+        # arg_group.add_argument(
+        #     '-margin', '--margin', type=float, default=0.3, help='margin'
+        # )
+        # arg_group.add_argument(
+        #     '-loss',
+        #     '--loss',
+        #     default='xent',
+        #     help='which criterion to use for the loss.',
+        # )
         argparser.set_defaults(
-            split_lines=True, add_p1_after_newln=True, encode_candidate_vecs=True
+            split_lines=True, add_p1_after_newln=True
         )
         TorchRankerAgent.add_cmdline_args(argparser)
         MemnnAgent.dictionary_class().add_cmdline_args(argparser)
@@ -78,12 +94,33 @@ class MemnnAgent(TorchRankerAgent):
         return 2
 
     def __init__(self, opt, shared=None):
+        self.init_memnn(opt)
+        super().__init__(opt, shared)
+        if opt.get('key_value_memories'):
+            self.init_kvmemnn(opt)
+        # self.init_cands(opt, shared)
+
+    def init_memnn(self, opt):
         self.id = 'MemNN'
+        self.memtype = 'memnn'
         self.memsize = opt['memsize']
         if self.memsize < 0:
             self.memsize = 0
         self.use_time_features = opt['time_features']
-        super().__init__(opt, shared)
+
+    def init_kvmemnn(self, opt):
+        self.id = 'KVMemNN'
+        self.memtype = 'kvmemnn'
+
+    # def build_loss(self, opt):
+    #     if opt.get('loss', 'xent') in ['xent', 'nll']:
+    #         return torch.nn.CrossEntropyLoss(reduction='sum')
+    #     elif opt.get('loss') == 'cosine':
+    #         return torch.nn.CosineEmbeddingLoss(
+    #             margin=opt.get('margin', 0.3), reduction='sum'
+    #         )
+    #     else:
+    #         raise RuntimeError('unsupported loss criterion: {}'.format(opt.get('loss')))
 
     def build_dictionary(self):
         """Add the time features to the dictionary before building the model."""

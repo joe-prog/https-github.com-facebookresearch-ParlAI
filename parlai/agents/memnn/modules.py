@@ -68,7 +68,9 @@ class MemNN(nn.Module):
             (bsz x seqlen) LongTensor queries to the model
 
         :param mems:
-            (bsz x num_mems x seqlen) LongTensor memories
+            (bsz x num_mems x seqlen) LongTensor memories. alternately, a pair of these.
+            if a pair of tensors, the first element will be used as keys and the
+            second as values.
 
         :param cands:
             (num_cands x seqlen) or (bsz x num_cands x seqlen)
@@ -84,10 +86,17 @@ class MemNN(nn.Module):
             (bsz x num_cands)
         """
         state = self.query_lt(xs)
+        # if there are no memories, `nomemnn` mode just uses query/ans embs
         if mems is not None:
-            # no memories available, `nomemnn` mode just uses query/ans embs
-            in_memory_embs = self.in_memory_lt(mems).transpose(1, 2)
-            out_memory_embs = self.out_memory_lt(mems)
+            if isinstance(mems, torch.Tensor):
+                # this is normal `memnn` mode
+                in_memory_embs = self.in_memory_lt(mems).transpose(1, 2)
+                out_memory_embs = self.out_memory_lt(mems)
+            else:
+                # this is `kvmemnn` mode
+                assert len(mems) == 2
+                in_memory_embs = self.in_memory_lt(mems[0]).transpose(1, 2)
+                out_memory_embs = self.out_memory_lt(mems[1])
 
             for _ in range(self.hops):
                 state = self.memory_hop(
