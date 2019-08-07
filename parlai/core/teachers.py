@@ -90,6 +90,29 @@ class DataLoader(Thread):
                 receive_fn(future)
 
 
+class FutureDummy(object):
+    """Dummy Future object which stores then provides data via result()."""
+    def __init__(self, data):
+        self.data = data
+
+    def result(self):
+        return self.data
+
+
+class DataLoaderDummy(object):
+    """
+    Stand-in for DataLoader class when using numthreads > 1.
+
+    Has the same API but just returns the examples itself instead of launching a
+    thread to load data in the background.
+
+    Since we're already doing hogwild multiprocessing we don't also do background
+    thread loading, as this can crash if using large batches.
+    """
+    def request_load(self, receive_fn, load_fn, args):
+        receive_fn(FutureDummy(load_fn(*args)))
+
+
 class FixedDialogTeacher(Teacher):
     """
     A teacher agent for all teachers involved in tasks with fixed data.
@@ -162,8 +185,13 @@ class FixedDialogTeacher(Teacher):
             self.index = AttrDict(value=-1)
 
         if not hasattr(self, 'data_loader'):
-            self.data_loader = DataLoader(opt)
-            self.data_loader.start()
+            if opt['numthreads'] == 1 and False:
+                # if we aren't doing multiprocess training, initialize dataloader
+                self.data_loader = DataLoader(opt)
+                self.data_loader.start()
+            else:
+                # otherwise don't use threaded data loader
+                self.data_loader = DataLoaderDummy()
 
         # set up batching
         self.bsz = opt.get('batchsize', 1)
