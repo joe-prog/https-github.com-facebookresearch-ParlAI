@@ -25,6 +25,7 @@ import numpy as np
 from parlai.core.torch_generator_agent import TorchGeneratorModel
 from parlai.core.utils import warn_once
 from parlai.core.utils import neginf
+import matplotlib.pyplot as plt
 
 try:
     from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
@@ -826,6 +827,8 @@ class BasicAttention(nn.Module):
         self.dim = dim
         self.get_weights = get_weights
         self.residual = residual
+        self.visCount = 0
+        self.running_means = 0.0
 
     def forward(self, xs, ys, mask_ys=None):
         """ xs: B x query_len x dim
@@ -847,6 +850,10 @@ class BasicAttention(nn.Module):
             attn_mask = attn_mask.repeat(1, x_len, 1)
             l1.masked_fill_(attn_mask, -float('inf'))
         l2 = self.softmax(l1)
+        # plt.figure()
+        # plt.hist(l2.argmax(2).cpu().reshape((-1)).cpu(), bins = 115)
+        # plt.savefig('atten_vis/{}'.format(self.visCount))
+        # self.visCount += 1
         lhs_emb = torch.bmm(l2, ys)
 
         # # add back the query

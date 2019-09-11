@@ -147,13 +147,13 @@ class TorchRankerAgent(TorchAgent):
             self.metrics['train_accuracy'] = 0.0
 
             self.build_model()
-            if self.fp16:
-                self.model = self.model.half()
             if init_model:
                 print('Loading existing model parameters from ' + init_model)
                 states = self.load(init_model)
             else:
                 states = {}
+            if self.fp16:
+                self.model = self.model.half()
 
         self.rank_top_k = opt.get('rank_top_k', -1)
         self.rank_loss = nn.CrossEntropyLoss(reduce=True, size_average=False)
@@ -839,7 +839,7 @@ class TorchRankerAgent(TorchAgent):
         cand_vecs = []
         for batch in tqdm(cand_batches):
             cand_vecs.extend(self.vectorize_fixed_candidates(batch))
-        return padded_3d([cand_vecs], dtype=cand_vecs[0].dtype).squeeze(0)
+        return padded_3d([cand_vecs], pad_idx=self.NULL_IDX, dtype=cand_vecs[0].dtype).squeeze(0)
 
     def _save_candidates(self, vecs, path, cand_type='vectors'):
         """Save cached vectors."""

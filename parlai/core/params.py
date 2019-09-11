@@ -984,7 +984,7 @@ class ParlaiParser(argparse.ArgumentParser):
 
         if print_args:
             self.print_args()
-            print_git_commit()
+            # print_git_commit()
             print_announcements(self.opt)
 
         return self.opt
