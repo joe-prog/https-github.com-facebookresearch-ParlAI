@@ -839,7 +839,9 @@ class TorchRankerAgent(TorchAgent):
         cand_vecs = []
         for batch in tqdm(cand_batches):
             cand_vecs.extend(self.vectorize_fixed_candidates(batch))
-        return padded_3d([cand_vecs], pad_idx=self.NULL_IDX, dtype=cand_vecs[0].dtype).squeeze(0)
+        return padded_3d(
+            [cand_vecs], pad_idx=self.NULL_IDX, dtype=cand_vecs[0].dtype
+        ).squeeze(0)
 
     def _save_candidates(self, vecs, path, cand_type='vectors'):
         """Save cached vectors."""
@@ -877,6 +879,7 @@ class TorchRankerAgent(TorchAgent):
             "[ Encoding fixed candidates set from ({} batch(es) of up to 256) ]"
             "".format(len(vec_batches))
         )
+        self.model.eval()
         with torch.no_grad():
             for vec_batch in tqdm(vec_batches):
                 cand_encs.append(self.encode_candidates(vec_batch))
