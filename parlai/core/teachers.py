@@ -223,7 +223,7 @@ class FixedDialogTeacher(Teacher):
         if hasattr(self, 'lastYs'):
             # share lastYs to communicate between batch_act and observe
             shared['lastYs'] = self.lastYs
-
+            
         if hasattr(self, 'examples'):
             shared['examples'] = self.examples
 
