@@ -15,7 +15,7 @@ from parlai.core.utils import round_sigfigs, no_lock
 from collections import Counter
 from parlai.core.utils import warn_once
 from numbers import Number
-
+import math
 import re
 
 DEFAULT_METRICS = {'correct', 'bleu', 'accuracy', 'f1'}
@@ -133,6 +133,16 @@ def _prec_recall_f1_score(pred_items, gold_items):
     f1 = (2 * precision * recall) / (precision + recall)
     return precision, recall, f1
 
+def _l2_distance(pred_items, gold_items):
+    '''Compute l2 distance for a set of gold and prediction items.
+    :param pred_items: iterable of predicted value tokens
+    :param gold_items: iterable of gold value tokens
+    :return l2 distance
+    '''
+    bow_pred = Counter(pred_items)
+    bow_gold = Counter(gold_items)
+    union = Counter(pred_items) | Counter(gold_items)
+    return math.sqrt(sum((bow_pred.get(k,0) - bow_gold.get(k,0))**2 for k in union.keys()))
 
 def _f1_score(guess, answers):
     """Return the max F1 score between the guess and *any* answer."""
