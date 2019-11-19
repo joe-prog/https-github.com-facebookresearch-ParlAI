@@ -101,6 +101,7 @@ class BertWrapper(torch.nn.Module):
         bert_model,
         output_dim,
         add_transformer_layer=False,
+        bottleneck_linear_layer_dim=None,
         layer_pulled=-1,
         aggregation="first",
     ):
@@ -108,6 +109,7 @@ class BertWrapper(torch.nn.Module):
         self.layer_pulled = layer_pulled
         self.aggregation = aggregation
         self.add_transformer_layer = add_transformer_layer
+        self.bottleneck_dim = bottleneck_linear_layer_dim
         # deduce bert output dim from the size of embeddings
         bert_output_dim = bert_model.embeddings.word_embeddings.weight.size(1)
 
@@ -120,8 +122,15 @@ class BertWrapper(torch.nn.Module):
                 hidden_act='gelu',
             )
             self.additional_transformer_layer = BertLayer(config_for_one_layer)
-        self.additional_linear_layer = torch.nn.Linear(bert_output_dim, 8)
-        self.bottleneck_linear_layer = torch.nn.Linear(8, output_dim)
+        if self.bottleneck_dim is not None:
+            self.additional_linear_layer = torch.nn.Linear(
+                bert_output_dim, self.bottleneck_dim
+            )
+            self.bottleneck_linear_layer = torch.nn.Linear(
+                self.bottleneck_dim, output_dim
+            )
+        else:
+            self.additional_linear_layer = torch.nn.Linear(bert_output_dim, output_dim)
         self.bert_model = bert_model
 
     def forward(self, token_ids, segment_ids, attention_mask):
@@ -163,7 +172,8 @@ class BertWrapper(torch.nn.Module):
 
         # We need this in case of dimensionality reduction
         result = self.additional_linear_layer(embeddings)
-        result = self.bottleneck_linear_layer(result)
+        if self.bottleneck_dim is not None:
+            result = self.bottleneck_linear_layer(result)
 
         # Sort of hack to make it work with distributed: this way the pooler layer
         # is used for grad computation, even though it does not change anything...
