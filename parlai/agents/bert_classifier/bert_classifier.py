@@ -112,6 +112,12 @@ class BertClassifierAgent(TorchClassifierAgent):
             default=None,
             help='Path to save embeddings to',
         )
+        parser.add_argument(
+            '--bottleneck-linear-layer-dim',
+            type=int,
+            default=None,
+            help='Dimension of optional bottleneck linear layer (default=None)',
+        )
         parser.set_defaults(dict_maxexs=0)  # skip building dictionary
 
     @staticmethod
@@ -139,6 +145,7 @@ class BertClassifierAgent(TorchClassifierAgent):
             BertModel.from_pretrained(self.pretrained_path),
             num_classes,
             embeddings_path=self.opt['embeddings_path'],
+            bottleneck_linear_layer_dim=self.opt['bottleneck_linear_layer_dim'],
         )
 
     def init_optim(self, params, optim_states=None, saved_optim_type=None):
