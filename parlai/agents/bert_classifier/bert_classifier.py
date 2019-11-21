@@ -106,6 +106,12 @@ class BertClassifierAgent(TorchClassifierAgent):
             help='separate the last utterance into a different'
             'segment with [SEP] token in between',
         )
+        parser.add_argument(
+            '--embeddings-path',
+            type=str,
+            default=None,
+            help='Path to save embeddings to',
+        )
         parser.set_defaults(dict_maxexs=0)  # skip building dictionary
 
     @staticmethod
@@ -129,7 +135,11 @@ class BertClassifierAgent(TorchClassifierAgent):
     def build_model(self):
         """Construct the model."""
         num_classes = len(self.class_list)
-        return BertWrapper(BertModel.from_pretrained(self.pretrained_path), num_classes)
+        return BertWrapper(
+            BertModel.from_pretrained(self.pretrained_path),
+            num_classes,
+            embeddings_path=self.opt['embeddings_path'],
+        )
 
     def init_optim(self, params, optim_states=None, saved_optim_type=None):
         """Initialize the optimizer."""

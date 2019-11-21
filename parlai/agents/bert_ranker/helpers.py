@@ -100,6 +100,7 @@ class BertWrapper(torch.nn.Module):
         self,
         bert_model,
         output_dim,
+        embeddings_path,
         add_transformer_layer=False,
         bottleneck_linear_layer_dim=None,
         layer_pulled=-1,
@@ -132,6 +133,10 @@ class BertWrapper(torch.nn.Module):
         else:
             self.additional_linear_layer = torch.nn.Linear(bert_output_dim, output_dim)
         self.bert_model = bert_model
+        if embeddings_path is not None:
+            self.f_embeddings = open(embeddings_path, 'w')
+        else:
+            self.f_embeddings = None
 
     def forward(self, token_ids, segment_ids, attention_mask):
         """Forward pass."""
@@ -172,6 +177,10 @@ class BertWrapper(torch.nn.Module):
 
         # We need this in case of dimensionality reduction
         result = self.additional_linear_layer(embeddings)
+        if self.f_embeddings is not None:
+            for r in result.detach().cpu().numpy():
+                embedding_string = ' '.join([str(val) for val in r.tolist()])
+                self.f_embeddings.write(embedding_string + '\n')
         if self.bottleneck_dim is not None:
             result = self.bottleneck_linear_layer(result)
 

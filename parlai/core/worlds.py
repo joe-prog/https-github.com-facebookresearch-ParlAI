@@ -685,6 +685,14 @@ class BatchWorld(World):
         self.batch_observations = [None] * len(self.world.get_agents())
         self.first_batch = None
         self.acts = [None] * len(self.world.get_agents())
+        if self.opt['situations_path'] is not None:
+            self.f_situations = open(self.opt['situations_path'], 'w')
+        else:
+            self.f_situations = None
+        if self.opt['emotions_path'] is not None:
+            self.f_emotions = open(self.opt['emotions_path'], 'w')
+        else:
+            self.f_emotions = None
 
     def batch_observe(self, index, batch_actions, index_acting):
         """Observe corresponding actions in all subworlds."""
@@ -749,6 +757,16 @@ class BatchWorld(World):
                 w.parley_init()
 
         for agent_idx in range(num_agents):
+
+            if (
+                agent_idx == 1 and
+                self.f_situations is not None and self.f_emotions is not None
+            ):
+                for obs in batch_observations[agent_idx]:
+                    if 'text' in obs and 'eval_labels' in obs:
+                        self.f_situations.write(obs['text'] + '\n')
+                        self.f_emotions.write(obs['eval_labels'][0] + '\n')
+
             # The agent acts.
             batch_act = self.batch_act(agent_idx, batch_observations[agent_idx])
             self.acts[agent_idx] = batch_act

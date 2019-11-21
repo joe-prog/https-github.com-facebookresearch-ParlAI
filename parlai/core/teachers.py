@@ -150,7 +150,7 @@ class FixedDialogTeacher(Teacher):
         if not hasattr(self, 'random'):
             self.random = self.datatype == 'train'
         if not hasattr(self, 'training'):
-            self.training = self.datatype.startswith('train')
+            self.training = self.datatype == 'train'
         if not hasattr(self, 'datafile'):
             self.datafile = opt.get('datafile', opt.get('pytorch_datafile'))
         # set up support for multithreaded data loading
