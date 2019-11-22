@@ -125,11 +125,17 @@ class BertWrapper(torch.nn.Module):
                 hidden_act='gelu',
             )
             self.additional_transformer_layer = BertLayer(config_for_one_layer)
-        #print("bottleneck dim is:", bottleneck_dim)
+        # print("bottleneck dim is:", bottleneck_dim)
         if add_bottleneck_layer:
-            print("we're using bottleneck layer with dimension of ", bottleneck_layer_dim)
-            self.bottleneck_linear_layer = torch.nn.Linear(bert_output_dim, bottleneck_layer_dim)
-            self.additional_linear_layer = torch.nn.Linear(bottleneck_layer_dim, output_dim)
+            print(
+                "we're using bottleneck layer with dimension of ", bottleneck_layer_dim
+            )
+            self.bottleneck_linear_layer = torch.nn.Linear(
+                bert_output_dim, bottleneck_layer_dim
+            )
+            self.additional_linear_layer = torch.nn.Linear(
+                bottleneck_layer_dim, output_dim
+            )
         else:
             print("we're not using bottleneck layer")
             self.additional_linear_layer = torch.nn.Linear(bert_output_dim, output_dim)
@@ -178,13 +184,14 @@ class BertWrapper(torch.nn.Module):
 
         # We need this in case of dimensionality reduction
         if self.add_bottleneck_layer:
-            result = self.additional_linear_layer(self.bottleneck_linear_layer(embeddings))
+            bottleneck_embeddings = self.bottleneck_linear_layer(embeddings)
+            if self.f_embeddings is not None:
+                for r in bottleneck_embeddings.detach().cpu().numpy():
+                    embedding_string = ' '.join([str(val) for val in r.tolist()])
+                    self.f_embeddings.write(embedding_string + '\n')
+            result = self.additional_linear_layer(bottleneck_embeddings)
         else:
             result = self.additional_linear_layer(embeddings)
-        if self.f_embeddings is not None:
-            for r in result.detach().cpu().numpy():
-                embedding_string = ' '.join([str(val) for val in r.tolist()])
-                self.f_embeddings.write(embedding_string + '\n')
 
         # Sort of hack to make it work with distributed: this way the pooler layer
         # is used for grad computation, even though it does not change anything...
