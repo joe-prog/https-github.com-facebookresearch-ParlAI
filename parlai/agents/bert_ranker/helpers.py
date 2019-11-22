@@ -141,7 +141,7 @@ class BertWrapper(torch.nn.Module):
             self.additional_linear_layer = torch.nn.Linear(bert_output_dim, output_dim)
         self.bert_model = bert_model
         if embeddings_path is not None:
-            self.f_embeddings = open(embeddings_path, 'a')
+            self.f_embeddings = open(embeddings_path, 'w')
         else:
             self.f_embeddings = None
 

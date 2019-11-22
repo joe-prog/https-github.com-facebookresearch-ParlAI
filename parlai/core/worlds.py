@@ -686,11 +686,11 @@ class BatchWorld(World):
         self.first_batch = None
         self.acts = [None] * len(self.world.get_agents())
         if self.opt.get('situations_path') is not None:
-            self.f_situations = open(self.opt['situations_path'], 'a')
+            self.f_situations = open(self.opt['situations_path'], 'w')
         else:
             self.f_situations = None
         if self.opt.get('emotions_path') is not None:
-            self.f_emotions = open(self.opt['emotions_path'], 'a')
+            self.f_emotions = open(self.opt['emotions_path'], 'w')
         else:
             self.f_emotions = None
 
