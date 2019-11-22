@@ -762,8 +762,6 @@ class BatchWorld(World):
                 agent_idx == 1 and
                 self.f_text is not None and self.f_labels is not None
             ):
-                import pdb; pdb.set_trace()
-                # TODO: remove
                 for obs in batch_observations[agent_idx]:
                     if 'labels' in obs:
                         labels = obs['labels']
