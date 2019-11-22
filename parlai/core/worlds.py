@@ -685,14 +685,14 @@ class BatchWorld(World):
         self.batch_observations = [None] * len(self.world.get_agents())
         self.first_batch = None
         self.acts = [None] * len(self.world.get_agents())
-        if self.opt.get('situations_path') is not None:
-            self.f_situations = open(self.opt['situations_path'], 'w')
+        if self.opt.get('text_path') is not None:
+            self.f_text = open(self.opt['text_path'], 'w')
         else:
-            self.f_situations = None
-        if self.opt.get('emotions_path') is not None:
-            self.f_emotions = open(self.opt['emotions_path'], 'w')
+            self.f_text = None
+        if self.opt.get('labels_path') is not None:
+            self.f_labels = open(self.opt['labels_path'], 'w')
         else:
-            self.f_emotions = None
+            self.f_labels = None
 
     def batch_observe(self, index, batch_actions, index_acting):
         """Observe corresponding actions in all subworlds."""
@@ -760,12 +760,14 @@ class BatchWorld(World):
 
             if (
                 agent_idx == 1 and
-                self.f_situations is not None and self.f_emotions is not None
+                self.f_text is not None and self.f_labels is not None
             ):
+                import pdb; pdb.set_trace()
+                # TODO: remove
                 for obs in batch_observations[agent_idx]:
                     if 'text' in obs and 'eval_labels' in obs:
-                        self.f_situations.write(obs['text'] + '\n')
-                        self.f_emotions.write(obs['eval_labels'][0] + '\n')
+                        self.f_text.write(obs['text'] + '\n')
+                        self.f_labels.write(obs['eval_labels'][0] + '\n')
 
             # The agent acts.
             batch_act = self.batch_act(agent_idx, batch_observations[agent_idx])
