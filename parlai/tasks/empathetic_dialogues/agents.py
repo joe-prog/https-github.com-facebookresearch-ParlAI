@@ -222,6 +222,9 @@ class EmotionClassificationSituationTeacher(EmpatheticDialogueTeacher):
             # for ex in ep:
             new_data.append(ep[0])
         self.data = new_data
+        # TODO: this creates one situation/label pair per original example. I think one
+        #  pair per episode might be cleaner, because the pairs are the same for every
+        #  entry of an episode
 
     def get(self, episode_idx, entry_idx=0):
 
@@ -240,6 +243,8 @@ class EmotionClassificationSituationTeacher(EmpatheticDialogueTeacher):
             'episode_done': episode_done,
             'label_candidates': ex[8],
         }
+        # TODO: these keys should be given more accurate names: for instance, situation
+        #  isn't situation anymore
 
 
 class DefaultTeacher(EmpatheticDialogueTeacher):

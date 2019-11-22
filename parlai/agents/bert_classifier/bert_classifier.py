@@ -144,7 +144,7 @@ class BertClassifierAgent(TorchClassifierAgent):
         return BertWrapper(
             BertModel.from_pretrained(self.pretrained_path),
             num_classes,
-            embeddings_path=self.opt['embeddings_path'],
+            embeddings_path=self.opt.get('embeddings_path'),
             bottleneck_linear_layer_dim=self.opt['bottleneck_linear_layer_dim'],
         )
 
