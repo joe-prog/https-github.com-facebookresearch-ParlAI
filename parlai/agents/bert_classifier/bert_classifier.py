@@ -67,6 +67,8 @@ class BertClassifierAgent(TorchClassifierAgent):
         opt['pretrained_path'] = self.pretrained_path
         self.add_cls_token = opt.get('add_cls_token', True)
         self.sep_last_utt = opt.get('sep_last_utt', False)
+        self.add_bottleneck_layer = opt.get('add_bottleneck_layer', False)
+        self.bottleneck_layer_dim = opt.get('bottleneck_layer_dim', 0)
         super().__init__(opt, shared)
 
     @classmethod
@@ -113,10 +115,16 @@ class BertClassifierAgent(TorchClassifierAgent):
             help='Path to save embeddings to',
         )
         parser.add_argument(
-            '--bottleneck-linear-layer-dim',
+            '--add-bottleneck-layer',
+            type='bool',
+            default=False,
+            help='add a bottleneck layer',
+        )
+        parser.add_argument(
+            '--bottleneck-layer-dim',
             type=int,
-            default=None,
-            help='Dimension of optional bottleneck linear layer (default=None)',
+            default=0,
+            help='bottleneck layer dimension',
         )
         parser.set_defaults(dict_maxexs=0)  # skip building dictionary
 
@@ -145,7 +153,8 @@ class BertClassifierAgent(TorchClassifierAgent):
             BertModel.from_pretrained(self.pretrained_path),
             num_classes,
             embeddings_path=self.opt.get('embeddings_path'),
-            bottleneck_linear_layer_dim=self.opt.get('bottleneck_linear_layer_dim'),
+            add_bottleneck_layer=self.add_bottleneck_layer,
+            bottleneck_layer_dim=self.bottleneck_layer_dim
         )
 
     def init_optim(self, params, optim_states=None, saved_optim_type=None):
