@@ -104,6 +104,7 @@ class BertWrapper(torch.nn.Module):
         add_transformer_layer=False,
         add_bottleneck_layer=False,
         bottleneck_layer_dim=0,
+        return_bottleneck_embeddings=False,
         layer_pulled=-1,
         aggregation="first",
     ):
@@ -144,6 +145,7 @@ class BertWrapper(torch.nn.Module):
             self.f_embeddings = open(embeddings_path, 'w')
         else:
             self.f_embeddings = None
+        self.return_bottleneck_embeddings = return_bottleneck_embeddings
 
     def forward(self, token_ids, segment_ids, attention_mask):
         """Forward pass."""
@@ -197,7 +199,10 @@ class BertWrapper(torch.nn.Module):
         # is used for grad computation, even though it does not change anything...
         # in practice, it just adds a very (768*768) x (768*batchsize) matmul
         result += 0 * torch.sum(output_pooler)
-        return result
+        if self.add_bottleneck_layer and self.return_bottleneck_embeddings:
+            return result, bottleneck_embeddings.detach()
+        else:
+            return result
 
 
 def surround(idx_vector, start_idx, end_idx):
