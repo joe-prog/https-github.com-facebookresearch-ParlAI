@@ -67,8 +67,12 @@ class BertClassifierAgent(TorchClassifierAgent):
         opt['pretrained_path'] = self.pretrained_path
         self.add_cls_token = opt.get('add_cls_token', True)
         self.sep_last_utt = opt.get('sep_last_utt', False)
+        self.embeddings_path = self.opt.get('embeddings_path', None)
         self.add_bottleneck_layer = opt.get('add_bottleneck_layer', False)
         self.bottleneck_layer_dim = opt.get('bottleneck_layer_dim', 0)
+        self.return_bottleneck_embeddings = opt.get(
+            'return_bottleneck_embeddings', False
+        )
         super().__init__(opt, shared)
 
     @classmethod
@@ -158,10 +162,10 @@ class BertClassifierAgent(TorchClassifierAgent):
         return BertWrapper(
             BertModel.from_pretrained(self.pretrained_path),
             num_classes,
-            embeddings_path=self.opt.get('embeddings_path'),
+            embeddings_path=self.embeddings_path,
             add_bottleneck_layer=self.add_bottleneck_layer,
             bottleneck_layer_dim=self.bottleneck_layer_dim,
-            return_bottleneck_embeddings=self.opt.get('return_bottleneck_embeddings'),
+            return_bottleneck_embeddings=self.return_bottleneck_embeddings,
         )
 
     def init_optim(self, params, optim_states=None, saved_optim_type=None):
