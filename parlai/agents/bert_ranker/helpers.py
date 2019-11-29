@@ -100,9 +100,9 @@ class BertWrapper(torch.nn.Module):
         self,
         bert_model,
         output_dim,
-        embeddings_path=None,
         add_transformer_layer=False,
         add_bottleneck_layer=False,
+        old_style_bottleneck=False,
         bottleneck_layer_dim=0,
         return_bottleneck_embeddings=False,
         layer_pulled=-1,
@@ -113,6 +113,7 @@ class BertWrapper(torch.nn.Module):
         self.aggregation = aggregation
         self.add_transformer_layer = add_transformer_layer
         self.add_bottleneck_layer = add_bottleneck_layer
+        self.old_style_bottleneck = old_style_bottleneck
         self.bottleneck_layer_dim = bottleneck_layer_dim
         # deduce bert output dim from the size of embeddings
         bert_output_dim = bert_model.embeddings.word_embeddings.weight.size(1)
@@ -131,20 +132,24 @@ class BertWrapper(torch.nn.Module):
             print(
                 "we're using bottleneck layer with dimension of ", bottleneck_layer_dim
             )
-            self.bottleneck_linear_layer = torch.nn.Linear(
-                bert_output_dim, bottleneck_layer_dim
-            )
-            self.additional_linear_layer = torch.nn.Linear(
-                bottleneck_layer_dim, output_dim
-            )
+            if self.old_style_bottleneck:
+                self.additional_linear_layer = torch.nn.Linear(
+                    bert_output_dim, bottleneck_layer_dim
+                )
+                self.bottleneck_linear_layer = torch.nn.Linear(
+                    bottleneck_layer_dim, output_dim
+                )
+            else:
+                self.bottleneck_linear_layer = torch.nn.Linear(
+                    bert_output_dim, bottleneck_layer_dim
+                )
+                self.additional_linear_layer = torch.nn.Linear(
+                    bottleneck_layer_dim, output_dim
+                )
         else:
             print("we're not using bottleneck layer")
             self.additional_linear_layer = torch.nn.Linear(bert_output_dim, output_dim)
         self.bert_model = bert_model
-        if embeddings_path is not None:
-            self.f_embeddings = open(embeddings_path, 'w')
-        else:
-            self.f_embeddings = None
         self.return_bottleneck_embeddings = return_bottleneck_embeddings
 
     def forward(self, token_ids, segment_ids, attention_mask):
@@ -186,12 +191,12 @@ class BertWrapper(torch.nn.Module):
 
         # We need this in case of dimensionality reduction
         if self.add_bottleneck_layer:
-            bottleneck_embeddings = self.bottleneck_linear_layer(embeddings)
-            if self.f_embeddings is not None:
-                for r in bottleneck_embeddings.detach().cpu().numpy():
-                    embedding_string = ' '.join([str(val) for val in r.tolist()])
-                    self.f_embeddings.write(embedding_string + '\n')
-            result = self.additional_linear_layer(bottleneck_embeddings)
+            if self.old_style_bottleneck:
+                bottleneck_embeddings = self.additional_linear_layer(embeddings)
+                result = self.bottleneck_linear_layer(bottleneck_embeddings)
+            else:
+                bottleneck_embeddings = self.bottleneck_linear_layer(embeddings)
+                result = self.additional_linear_layer(bottleneck_embeddings)
         else:
             result = self.additional_linear_layer(embeddings)
 
