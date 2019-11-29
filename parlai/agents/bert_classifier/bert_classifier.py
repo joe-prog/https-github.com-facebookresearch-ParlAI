@@ -161,7 +161,7 @@ class BertClassifierAgent(TorchClassifierAgent):
             embeddings_path=self.opt.get('embeddings_path'),
             add_bottleneck_layer=self.add_bottleneck_layer,
             bottleneck_layer_dim=self.bottleneck_layer_dim,
-            return_bottleneck_embeddings=self.opt('return_bottleneck_embeddings'),
+            return_bottleneck_embeddings=self.opt.get('return_bottleneck_embeddings'),
         )
 
     def init_optim(self, params, optim_states=None, saved_optim_type=None):
