@@ -68,6 +68,7 @@ class BertClassifierAgent(TorchClassifierAgent):
         self.add_cls_token = opt.get('add_cls_token', True)
         self.sep_last_utt = opt.get('sep_last_utt', False)
         self.add_bottleneck_layer = opt.get('add_bottleneck_layer', False)
+        self.old_style_bottleneck = opt.get('old_style_bottleneck', False)
         self.bottleneck_layer_dim = opt.get('bottleneck_layer_dim', 0)
         self.return_bottleneck_embeddings = opt.get(
             'return_bottleneck_embeddings', False
