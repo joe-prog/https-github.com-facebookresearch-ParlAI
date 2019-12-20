@@ -13,6 +13,7 @@ import os
 import sys as _sys
 import datetime
 import parlai
+import git
 
 from parlai.core.agents import get_agent_module, get_task_module
 from parlai.core.build_data import modelzoo_path
@@ -1057,6 +1058,7 @@ class ParlaiParser(argparse.ArgumentParser):
 
         if print_args:
             self.print_args()
+            print_git_commit()
             print_announcements(self.opt)
 
         return self.opt

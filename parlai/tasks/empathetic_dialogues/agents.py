@@ -177,11 +177,14 @@ class EmotionClassificationTeacher(EmpatheticDialogueTeacher):
 
     def get(self, episode_idx, entry_idx=0):
         if not self.single_turn:
+            # get the specific episode from the example
             ep = self.data[episode_idx]
             i = entry_idx * 2
             ex = ep[i]
             episode_done = i >= (len(ep) - 2)
         else:
+            # each episode is a singular example, we use both sides of the
+            # conversation
             ex = self.data[episode_idx]
             episode_done = True
 
@@ -197,54 +200,6 @@ class EmotionClassificationTeacher(EmpatheticDialogueTeacher):
             'episode_done': episode_done,
             'label_candidates': ex[8],
         }
-
-
-class EmotionClassificationSituationTeacher(EmpatheticDialogueTeacher):
-    """
-    Class for detecting the emotion based on the situation.
-    """
-
-    def __init__(self, opt, shared=None):
-        super().__init__(opt, shared)
-        if not shared:
-            self._get_situations()
-        self.fold = self.opt.get('datatype', 'train').split(':')[0]
-
-    def num_episodes(self):
-        return len(self.data)
-
-    def num_examples(self):
-        return len(self.data)
-
-    def _get_situations(self):
-        new_data = []
-        for ep in self.data:
-            # for ex in ep:
-            new_data.append(ep[0])
-        self.data = new_data
-        # TODO: this creates one situation/label pair per original example. I think one
-        #  pair per episode might be cleaner, because the pairs are the same for every
-        #  entry of an episode
-
-    def get(self, episode_idx, entry_idx=0):
-
-        ex = self.data[episode_idx]
-        episode_done = True
-
-        return {
-            'situation': ex[0],
-            'labels': [ex[2]],
-            'text': ex[3],
-            'next_utt': ex[1],
-            'prepend_ctx': ex[6],
-            'prepend_cand': ex[7],
-            'deepmoji_ctx': ex[4],
-            'deepmoji_cand': ex[5],
-            'episode_done': episode_done,
-            'label_candidates': ex[8],
-        }
-        # TODO: these keys should be given more accurate names: for instance, situation
-        #  isn't situation anymore
 
 
 class DefaultTeacher(EmpatheticDialogueTeacher):
