@@ -4,12 +4,10 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 """
-This helper script can be used alone with modelfile and task: the output will
-contain the word statistics of the model outputs.
-One can also use the function defined here in other places in order to get such
-statistic for any agent given the agent object (with corr. dict) and a
-sequence.
-
+This helper script can be used alone with modelfile and task: the output will contain
+the word statistics of the model outputs. One can also use the function defined here in
+other places in order to get such statistic for any agent given the agent object (with
+corr. dict) and a sequence.
 
 Additionally provides function get_word_stats that can be used in other parts
 of runtime code since it depends only on the agent object. For example:
@@ -26,7 +24,6 @@ Examples
 .. code-block:: shell
 
   eval_wordstat.py -mf data/model -t convai2:self --freq-bins 10,100,1000
-
 """
 
 from parlai.core.params import ParlaiParser
@@ -75,7 +72,7 @@ def setup_args(parser=None):
     parser.add_argument(
         '-cun',
         '--compute-unique',
-        type=bool,
+        type='bool',
         default=True,
         help='Compute %% of unique responses from the model',
     )
@@ -86,7 +83,8 @@ def setup_args(parser=None):
 
 def get_word_stats(text, agent_dict, bins=(0, 100, 1000, 100000)):
     """
-    Function which takes text sequence and dict, returns word freq and length statistics
+    Function which takes text sequence and dict, returns word freq and length
+    statistics.
 
     :param sequence: text sequence
     :param agent_dict: can be external dict or dict from the model
@@ -108,7 +106,8 @@ def get_word_stats(text, agent_dict, bins=(0, 100, 1000, 100000)):
 
 
 def eval_wordstat(opt, print_parser=None):
-    """Evaluates a model.
+    """
+    Evaluates a model.
 
     :param opt: tells the evaluation function how to run
     :param print_parser: if provided, prints the options that are set within the
@@ -149,11 +148,13 @@ def eval_wordstat(opt, print_parser=None):
         'pred_list': [],
         'pure_pred_list': [],
         'context_list': [],
+        'unique_words': set(),
     }
     bins = [int(i) for i in opt['freq_bins'].split(',')]
 
     def process_prediction(prediction, word_statistics):
-        word_statistics['pred_list'].append(normalize_answer(prediction))
+        normalized = normalize_answer(prediction)
+        word_statistics['pred_list'].append(normalized)
         freqs, _cnt, wlength, clength = get_word_stats(
             prediction, dictionary, bins=bins
         )
@@ -161,6 +162,7 @@ def eval_wordstat(opt, print_parser=None):
         word_statistics['mean_wlength'].append(wlength)
         word_statistics['mean_clength'].append(clength)
         word_statistics['freqs_cnt'] += Counter(freqs)
+        word_statistics['unique_words'] |= set(normalized.split(" "))
         return word_statistics
 
     while not world.epoch_done():
@@ -174,6 +176,8 @@ def eval_wordstat(opt, print_parser=None):
         else:
             for w in world.worlds:
                 try:
+                    if 'text' not in w.acts[-1]:
+                        continue
                     prediction = w.acts[-1]['text']
                     word_statistics['context_list'].append(w.acts[0]['text'])
                     word_statistics['pure_pred_list'].append(prediction)
@@ -227,6 +231,7 @@ def eval_wordstat(opt, print_parser=None):
                 len(unique_list) / len(word_statistics['pred_list']) * 100, prec=2
             )
         )
+    print("Total unique tokens:", len(word_statistics['unique_words']))
 
     if opt['dump_predictions_path'] is not None:
         with open(opt['dump_predictions_path'], 'w') as f:

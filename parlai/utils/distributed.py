@@ -8,16 +8,16 @@
 """
 Useful utilities for training in distributed mode.
 
-Many of these functions act as wrappers which perform no-ops if code is running
-in non-distributed mode.
+Many of these functions act as wrappers which perform no-ops if code is running in non-
+distributed mode.
 """
 
 import builtins
 import pickle
 import contextlib
 
-# from parlai.utils.logging import logger # TODO: Uncomment before completion of #2044
 try:
+    import torch.nn
     import torch.version
     import torch.distributed as dist
 
@@ -53,12 +53,16 @@ def validate_params(opt):
 
 
 def is_distributed():
-    """Return if we are in distributed mode."""
+    """
+    Return if we are in distributed mode.
+    """
     return TORCH_AVAILABLE and dist.is_available() and dist.is_initialized()
 
 
 def num_workers():
-    """Get the total number of workers."""
+    """
+    Get the total number of workers.
+    """
     if not is_distributed():
         return 1
     else:
@@ -69,8 +73,8 @@ def is_primary_worker():
     """
     Determine if we are the primary (master) worker.
 
-    Returns False if we are a secondary worker. Returns True if we are either
-    (1) not in distributed mode (2) or are the primary (rank 0) worker.
+    Returns False if we are a secondary worker. Returns True if we are either (1) not in
+    distributed mode (2) or are the primary (rank 0) worker.
     """
     return not is_distributed() or dist.get_rank() == 0
 
@@ -78,9 +82,10 @@ def is_primary_worker():
 @contextlib.contextmanager
 def override_print(suppress=False, prefix=None):
     """
-    Context manager to override the print to suppress or modify output.
-    Recommended usage is to call this with suppress=True for all non-primary workers,
-    or call with a prefix of rank on all workers.
+    Context manager to override the print to suppress or modify output. Recommended
+    usage is to call this with suppress=True for all non-primary workers, or call with a
+    prefix of rank on all workers.
+
     >>> with override_print(prefix="rank{}".format(rank)):
     ...     my_computation()
     :param bool suppress:
@@ -105,37 +110,6 @@ def override_print(suppress=False, prefix=None):
     yield
     # bring it back at the end of the context
     builtins.print = builtin_print
-
-
-# # TODO: Replace override_print with this version before completing #2044
-# # TODO: Uncomment import statement at the top
-# # TODO: IDEA: Pass logger object as parameter to thi function
-# @contextlib.contextmanager
-# def override_print(suppress=False, prefix=None):
-#     """
-#     Context manager to override the logger to suppress or modify output.
-#
-#     Recommended usage is to call this with suppress=True for all non-primary workers,
-#     or call with a prefix of rank on all workers.
-#
-#     >>> with override_print(prefix="rank{}".format(rank)):
-#     ...     my_computation()
-#
-#     :param bool suppress:
-#         if true, all future log statements are noops.
-#     :param str prefix:
-#         if not None, this string is prefixed to all future log statements.
-#     """
-#     Alternative implementation: To be used when switched to all-logging
-#     if suppress:
-#         logger.disabled = True
-#     elif prefix:
-#         logger.add_format_prefix(prefix)
-#     else:
-#         pass  # do nothing
-#     yield
-#     logger.disabled = False
-#     logger.reset_formatters()
 
 
 def all_gather_list(data, max_size=16384):
@@ -256,21 +230,30 @@ def sync_object(data, max_size=16384):
     return data
 
 
-def check_synced_parameters(model):
+def sync_parameters(model: torch.nn.Module) -> bool:
     """
-    Check that all parameters across all workers are the same.
+    Sync all parameters across all workers are the same.
 
-    Always returns True, or raises an AssertionError if they are not
-    synchronized.
+    Always returns True, or raises an AssertionError if there was a failure.
 
-    :param torch.nn.Module model: A pytorch model.
-    :return: True
+    :param model: A pytorch model.
+    :return: always True
     """
     if not is_distributed():
         # if things aren't distributed, of course things are in sync
         return True
 
-    # compute the local norm:
+    # sync all the parameters
+    with torch.no_grad():
+        for p in model.parameters():
+            if not is_primary_worker():
+                # zero out parameters on all workers EXCEPT the primary worker
+                p.data.zero_()
+            # sum the parameters across all workers, resulting in everyone having
+            # the parameters of the primary worker
+            dist.all_reduce(p.data, dist.ReduceOp.SUM)
+
+    # double check everything synced correctly
     norm2 = sum((p.data ** 2).sum().float() for p in model.parameters()).item()
     all_versions = all_gather_list(norm2)
     if not all(n == norm2 for n in all_versions):
