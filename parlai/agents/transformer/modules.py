@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,16 +16,17 @@ https://arxiv.org/abs/1810.04805), and a few different variations seen in the
 literature (BERT and XLM; https://arxiv.org/abs/1901.07291).
 """
 
+import math
+from typing import Dict, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import math
-import numpy as np
-
 from parlai.core.torch_generator_agent import TorchGeneratorModel
 from parlai.utils.misc import warn_once
-from parlai.utils.misc import neginf
+from parlai.utils.torch import neginf
 
 try:
     from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
@@ -36,13 +38,17 @@ LAYER_NORM_EPS = 1e-5  # Epsilon for layer norm.
 
 
 def _normalize(tensor, norm_layer):
-    """Broadcast layer norm."""
+    """
+    Broadcast layer norm.
+    """
     size = tensor.size()
     return norm_layer(tensor.view(-1, size[-1])).view(size)
 
 
 def _create_embeddings(dictionary, embedding_size, padding_idx):
-    """Create and initialize word embeddings."""
+    """
+    Create and initialize word embeddings.
+    """
     e = nn.Embedding(len(dictionary), embedding_size, padding_idx)
     nn.init.normal_(e.weight, mean=0, std=embedding_size ** -0.5)
     nn.init.constant_(e.weight[padding_idx], 0)
@@ -113,7 +119,9 @@ def gelu(tensor):
 
 
 def get_n_positions_from_options(opt):
-    """Determine n_positions from options dict."""
+    """
+    Determine n_positions from options dict.
+    """
     if opt.get('n_positions'):
         # if the number of positions is explicitly provided, use that
         n_positions = opt['n_positions']
@@ -130,7 +138,9 @@ def get_n_positions_from_options(opt):
 
 
 class TransformerMemNetModel(nn.Module):
-    """Model which takes context, memories, candidates and encodes them."""
+    """
+    Model which takes context, memories, candidates and encodes them.
+    """
 
     def __init__(self, opt, dictionary):
         super().__init__()
@@ -203,7 +213,9 @@ class TransformerMemNetModel(nn.Module):
         )
 
     def encode_cand(self, words):
-        """Encode the candidates."""
+        """
+        Encode the candidates.
+        """
         if words is None:
             return None
 
@@ -222,7 +234,9 @@ class TransformerMemNetModel(nn.Module):
         return encoded
 
     def encode_context_memory(self, context_w, memories_w, context_segments=None):
-        """Encode the context and memories."""
+        """
+        Encode the context and memories.
+        """
         # [batch, d]
         if context_w is None:
             # it's possible that only candidates were passed into the
@@ -270,7 +284,9 @@ class TransformerMemNetModel(nn.Module):
 
 
 def create_position_codes(n_pos, dim, out):
-    """Create positional codes and store them in ``out``."""
+    """
+    Create positional codes and store them in ``out``.
+    """
     position_enc = np.array(
         [
             [pos / np.power(10000, 2 * j / dim) for j in range(dim // 2)]
@@ -302,12 +318,16 @@ class TransformerResponseWrapper(nn.Module):
         )
 
     def forward(self, *args):
-        """Forward pass."""
+        """
+        Forward pass.
+        """
         return self.mlp(self.transformer(*args))
 
 
 class TransformerLinearWrapper(nn.Module):
-    """Wrap a transformer in a linear layer."""
+    """
+    Wrap a transformer in a linear layer.
+    """
 
     def __init__(self, transformer, output_dim):
         super().__init__()
@@ -316,7 +336,8 @@ class TransformerLinearWrapper(nn.Module):
         self.additional_linear_layer = nn.Linear(input_dim, output_dim)
 
     def forward(self, *args):
-        """Forward pass.
+        """
+        Forward pass.
 
         Apply transformer, then additional linear layer.
         """
@@ -523,7 +544,9 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerEncoderLayer(nn.Module):
-    """Implements a single Transformer encoder layer."""
+    """
+    Implements a single Transformer encoder layer.
+    """
 
     def __init__(
         self,
@@ -555,8 +578,11 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, tensor, mask):
-        """Forward pass."""
-        tensor = tensor + self.dropout(self.attention(tensor, mask=mask))
+        """
+        Forward pass.
+        """
+        attended_tensor, _ = self.attention(tensor, mask=mask)
+        tensor = tensor + self.dropout(attended_tensor)
         tensor = _normalize(tensor, self.norm1)
         tensor = tensor + self.dropout(self.ffn(tensor))
         tensor = _normalize(tensor, self.norm2)
@@ -668,13 +694,23 @@ class TransformerDecoder(nn.Module):
         :param encoder_state:
             Output from the encoder module forward pass.
         :param incr_state:
-            Ignored. Should always be ``None`` in this version.
+            The incremental state: a dictionary whose keys index the layers and whose
+            values contain the incremental state for each layer.
         """
         encoder_output, encoder_mask = encoder_state
 
         seq_len = input.size(1)
         positions = input.new(seq_len).long()
         positions = torch.arange(seq_len, out=positions).unsqueeze(0)
+
+        if incr_state is not None:
+            # We're doing incremental decoding, so select only the most recent position
+            input = input[:, -1:]
+            if positions is not None:
+                positions = positions[:, -1:]
+        else:
+            incr_state = {idx: {} for idx in range(len(self.layers))}
+
         tensor = self.embeddings(input)
         if self.embeddings_scale:
             tensor = tensor * np.sqrt(self.dim)
@@ -690,10 +726,16 @@ class TransformerDecoder(nn.Module):
         tensor = tensor + self.position_embeddings(positions).expand_as(tensor)
         tensor = self.dropout(tensor)  # --dropout
 
-        for layer in self.layers:
-            tensor = layer(tensor, encoder_output, encoder_mask)
+        new_incr_state = {}
+        for idx, layer in enumerate(self.layers):
+            tensor, new_incr_state[idx] = layer(
+                x=tensor,
+                encoder_output=encoder_output,
+                encoder_mask=encoder_mask,
+                incr_state=incr_state[idx],
+            )
 
-        return tensor, None
+        return tensor, new_incr_state
 
 
 class TransformerDecoderLayer(nn.Module):
@@ -739,20 +781,39 @@ class TransformerDecoderLayer(nn.Module):
         )
         self.norm3 = LayerNorm(embedding_size, eps=LAYER_NORM_EPS)
 
-    def forward(self, x, encoder_output, encoder_mask):
-        """Forward pass."""
+    def forward(self, x, encoder_output, encoder_mask, incr_state=None):
+        """
+        Forward pass.
+
+        The incremental state is a dict with values for self- and encoder-attention
+        states.
+        """
+
+        if incr_state is None:
+            incr_state = {}
+
         decoder_mask = self._create_selfattn_mask(x)
         # first self attn
         residual = x
         # don't peak into the future!
-        x = self.self_attention(query=x, mask=decoder_mask)
+        x, final_self_attn_incr_state = self.self_attention(
+            query=x,
+            mask=decoder_mask,
+            incr_state=incr_state.get('self_attn'),
+            static_kv=False,
+        )
         x = self.dropout(x)  # --dropout
         x = x + residual
         x = _normalize(x, self.norm1)
 
         residual = x
-        x = self.encoder_attention(
-            query=x, key=encoder_output, value=encoder_output, mask=encoder_mask
+        x, final_encoder_attn_incr_state = self.encoder_attention(
+            query=x,
+            key=encoder_output,
+            value=encoder_output,
+            mask=encoder_mask,
+            incr_state=incr_state.get('encoder_attn'),
+            static_kv=True,
         )
         x = self.dropout(x)  # --dropout
         x = residual + x
@@ -765,7 +826,11 @@ class TransformerDecoderLayer(nn.Module):
         x = residual + x
         x = _normalize(x, self.norm3)
 
-        return x
+        new_incr_state = {
+            'self_attn': final_self_attn_incr_state,
+            'encoder_attn': final_encoder_attn_incr_state,
+        }
+        return x, new_incr_state
 
     def _create_selfattn_mask(self, x):
         # figure out how many timestamps we need
@@ -777,9 +842,28 @@ class TransformerDecoderLayer(nn.Module):
         mask = mask.unsqueeze(0).expand(bsz, -1, -1)
         return mask
 
+    def reorder_incremental_state(
+        self, incremental_state: Dict[str, dict], inds: torch.Tensor
+    ) -> Dict[str, dict]:
+        """
+        Reorder all incremental-state tensors for this layer.
+        """
+        attn_types = {
+            'self_attn': self.self_attention,
+            'encoder_attn': self.encoder_attention,
+        }
+        return {
+            attn_type: attn.reorder_incremental_state(
+                incremental_state[attn_type], inds
+            )
+            for attn_type, attn in attn_types.items()
+        }
+
 
 class TransformerGeneratorModel(TorchGeneratorModel):
-    """Implements a full generator model, with one encoder and one decoder."""
+    """
+    Implements a full generator model, with one encoder and one decoder.
+    """
 
     def __init__(self, opt, dictionary):
         self.pad_idx = dictionary[dictionary.null_token]
@@ -834,24 +918,35 @@ class TransformerGeneratorModel(TorchGeneratorModel):
         mask = torch.index_select(mask, 0, indices)
         return enc, mask
 
-    def reorder_decoder_incremental_state(self, incremental_state, inds):
+    def reorder_decoder_incremental_state(
+        self, incremental_state: Dict[int, dict], inds: torch.Tensor
+    ) -> Dict[int, dict]:
         """
         Reorder the decoder incremental state.
 
-        Not implemented in Transformers, since ``incremental_state`` is always None.
+        See ``TorchGeneratorModel.reorder_decoder_incremental_state`` for a description.
+
+        Here, incremental_state is a dict whose keys are layer indices and whose values
+        are dicts containing the incremental state for that layer.
         """
-        # no support for incremental decoding at this time
-        return None
+        return {
+            idx: layer.reorder_incremental_state(incremental_state[idx], inds)
+            for idx, layer in enumerate(self.decoder.layers)
+        }
 
     def output(self, tensor):
-        """Compute output logits."""
+        """
+        Compute output logits.
+        """
         # project back to vocabulary
         output = F.linear(tensor, self.embeddings.weight)
         return output
 
 
 class BasicAttention(nn.Module):
-    """Implements simple/classical attention."""
+    """
+    Implements simple/classical attention.
+    """
 
     def __init__(self, dim=1, attn='cosine', residual=False, get_weights=True):
         super().__init__()
@@ -864,7 +959,8 @@ class BasicAttention(nn.Module):
         self.residual = residual
 
     def forward(self, xs, ys, mask_ys=None, values=None):
-        """Compute attention.
+        """
+        Compute attention.
 
         Attend over ys with query xs to obtain weights, then apply weights to
         values (ys if yalues is None)
@@ -929,12 +1025,33 @@ class MultiHeadAttention(nn.Module):
 
         nn.init.xavier_normal_(self.out_lin.weight)
 
-    def forward(self, query, key=None, value=None, mask=None):
-        """Forward pass."""
-        # TODO: there are a lot of parameters to document here.
+    def forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor = None,
+        value: torch.Tensor = None,
+        mask: torch.Tensor = None,
+        incr_state: Dict[str, torch.Tensor] = None,
+        static_kv: bool = False,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """
+        Forward pass.
 
-        # Input is [B, query_len, dim]
-        # Mask is [B, key_len] (selfattn) or [B, key_len, key_len] (enc attn)
+        :param query: attention query
+        :param key: attention key
+        :param value: attention value
+        :param mask: tensor in which True means that we are allowing attention and False
+          means we are blocking it. Mask is:
+          - [B, key_len] (encoder self-attn and decoder enc/dec attn)
+          - [B, query_len, key_len] (decoder self-attn)
+          - [B, 1, 1] (decoder self-attn with incr_state caching)
+        :param incr_state: dictionary with values representing the previous states of
+          the key, value, and mask
+        :param static_kv: True if the key and value are held constant during decoding
+          (as in encoder/decoder attention)
+        :return: (final attended tensor, new incremental state)
+        """
+
         batch_size, query_len, dim = query.size()
         assert (
             dim == self.dim
@@ -964,20 +1081,60 @@ class MultiHeadAttention(nn.Module):
             # key and value are the same, but query differs
             # self attention
             value = key
-        _, key_len, dim = key.size()
+        _, _key_len, dim = key.size()
 
         q = prepare_head(self.q_lin(query))
         k = prepare_head(self.k_lin(key))
         v = prepare_head(self.v_lin(value))
 
+        # Prepend incremental states. For each of the key, value, and mask, see if
+        # a previous incremental state exists, and if so, reshape it to match the shape
+        # of the new state. Concatenate the previous and new states to match what the
+        # full state would have been if we had not cached. (If we are using static_kv,
+        # these three states are unchanging, so just re-use the cached states.)
+        if incr_state is None:
+            incr_state = {}
+        if 'prev_key' in incr_state:
+            prev_key = incr_state['prev_key'].view(
+                batch_size * n_heads, -1, dim_per_head
+            )
+            if static_kv:
+                k = prev_key
+            else:
+                k = torch.cat([prev_key, k], dim=1)
+        if 'prev_value' in incr_state:
+            prev_value = incr_state['prev_value'].view(
+                batch_size * n_heads, -1, dim_per_head
+            )
+            if static_kv:
+                v = prev_value
+            else:
+                v = torch.cat([prev_value, v], dim=1)
+        if 'prev_mask' in incr_state:
+            if static_kv:
+                mask = incr_state['prev_mask']
+            else:
+                mask = torch.cat([incr_state['prev_mask'], mask], dim=2)
+                # Prepend along the key_len dimension (analogous to
+                # incr_state['prev_key'])
+
+        # Save new incremental states. We reshape to allow for reordering along batch
+        # dimension.
+        new_incr_state = {
+            'prev_key': k.view(batch_size, n_heads, -1, dim_per_head),
+            'prev_value': v.view(batch_size, n_heads, -1, dim_per_head),
+            'prev_mask': mask,
+        }
+
+        full_key_len = k.size(1)
         dot_prod = q.div_(scale).bmm(k.transpose(1, 2))
         # [B * n_heads, query_len, key_len]
         attn_mask = (
             (mask == 0)
-            .view(batch_size, 1, -1, key_len)
+            .view(batch_size, 1, -1, full_key_len)
             .repeat(1, n_heads, 1, 1)
-            .expand(batch_size, n_heads, query_len, key_len)
-            .view(batch_size * n_heads, query_len, key_len)
+            .expand(batch_size, n_heads, query_len, full_key_len)
+            .view(batch_size * n_heads, query_len, full_key_len)
         )
         assert attn_mask.shape == dot_prod.shape
         dot_prod.masked_fill_(attn_mask, neginf(dot_prod.dtype))
@@ -996,11 +1153,24 @@ class MultiHeadAttention(nn.Module):
 
         out = self.out_lin(attentioned)
 
-        return out
+        return out, new_incr_state
+
+    def reorder_incremental_state(
+        self, incremental_state: Dict[str, torch.Tensor], inds: torch.Tensor
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Reorder the input incremental-state tensors.
+        """
+        return {
+            key: torch.index_select(val, 0, inds).contiguous()
+            for key, val in incremental_state.items()
+        }
 
 
 class TransformerFFN(nn.Module):
-    """Implements the FFN part of the transformer."""
+    """
+    Implements the FFN part of the transformer.
+    """
 
     def __init__(self, dim, dim_hidden, relu_dropout=0, activation='relu'):
         super(TransformerFFN, self).__init__()
@@ -1020,7 +1190,9 @@ class TransformerFFN(nn.Module):
         # TODO: initialize biases to 0
 
     def forward(self, x):
-        """Forward pass."""
+        """
+        Forward pass.
+        """
         x = self.nonlinear(self.lin1(x))
         x = self.relu_dropout(x)  # --relu-dropout
         x = self.lin2(x)

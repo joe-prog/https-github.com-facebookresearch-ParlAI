@@ -15,7 +15,7 @@ automatically, e.g.:
 ... code-block:
 
    python examples/interactive.py --model-file
-       "zoo:wikipedia_2016-12-21/tfidf_retriever/drqa_docs"
+       "zoo:wikipedia_20161221/tfidf_retriever/drqa_docs"
 
 
 There are a number of guidelines you should follow in the zoo:
@@ -103,14 +103,14 @@ model_list = [
     },
     {
         "title": "Wikipedia Retriever (used for open SQuAD)",
-        "id": "wikipedia_2016-12-21",
-        "path": "zoo:wikipedia_2016-12-21/tfidf_retriever/drqa_docs",
+        "id": "wikipedia_20161221",
+        "path": "zoo:wikipedia_20161221/tfidf_retriever/drqa_docs",
         "agent": "tfidf_retriever",
         "external_website": "https://github.com/facebookresearch/DrQA",
         "task": "wikipedia:full",
         "example": (
             "python -m parlai.scripts.interactive --model tfidf_retriever "
-            "-mf zoo:wikipedia_2016-12-21/tfidf_retriever/drqa_docs"
+            "-mf zoo:wikipedia_20161221/tfidf_retriever/drqa_docs"
         ),
         "result": (
             """
@@ -412,7 +412,7 @@ model_list = [
         "title": "Transformer Classifier Single-turn Dialogue Safety Model",
         "id": "dialogue_safety",
         "path": "zoo:dialogue_safety/single_turn/model",
-        "agent": "transformer_classifier",  # noqa: E501
+        "agent": "transformer/classifier",  # noqa: E501
         "task": "dialogue_safety:adversarial,dialogue_safety:standard",
         "project": "https://github.com/facebookresearch/ParlAI/tree/master/projects/dialogue_safety",
         "description": (

@@ -38,22 +38,25 @@ This module also provides a utility method:
     ``create_task_agents(str)``: instantiate task-specific agents (e.g. a teacher)
     from a given task string (e.g. 'babi:task1k:1' or 'squad'). Used by
     ``MultiTaskTeacher``.
-
 """
 
 from parlai.core.build_data import modelzoo_path
-from parlai.utils.misc import warn_once, load_opt_file
+from parlai.core.loader import load_teacher_module, load_agent_module
+from parlai.utils.misc import warn_once
+from parlai.core.opt import Opt, load_opt_file
 from .metrics import Metrics, aggregate_metrics
 import copy
-import importlib
 import random
 import os
+from typing import List
 
 
 class Agent(object):
-    """Base class for all other agents."""
+    """
+    Base class for all other agents.
+    """
 
-    def __init__(self, opt, shared=None):
+    def __init__(self, opt: Opt, shared=None):
         if not hasattr(self, 'id'):
             self.id = 'agent'
         if not hasattr(self, 'opt'):
@@ -61,12 +64,16 @@ class Agent(object):
         self.observation = None
 
     def observe(self, observation):
-        """Receive an observation/action dict."""
+        """
+        Receive an observation/action dict.
+        """
         self.observation = observation
         return observation
 
     def act(self):
-        """Return an observation/action dict based upon given observation."""
+        """
+        Return an observation/action dict based upon given observation.
+        """
         if hasattr(self, 'observation') and self.observation is not None:
             print('agent received observation:')
             print(self.observation)
@@ -78,7 +85,9 @@ class Agent(object):
         return t
 
     def getID(self):
-        """Return the agent ID."""
+        """
+        Return the agent ID.
+        """
         return self.id
 
     def epoch_done(self):
@@ -101,8 +110,8 @@ class Agent(object):
         """
         Reset any metrics reported by this agent.
 
-        This is called to indicate metrics should start fresh, and is typically
-        called between loggings or after a `report()`.
+        This is called to indicate metrics should start fresh, and is typically called
+        between loggings or after a `report()`.
         """
         pass
 
@@ -114,13 +123,21 @@ class Agent(object):
         """
         pass
 
+    def clone(self):
+        """
+        Make a shared copy of this agent.
+
+        Should be the same as using create_agent_from_shared(.), but slightly easier.
+        """
+        return type(self)(self.opt, self.share())
+
     def share(self):
         """
         Share any parameters needed to create a shared version of this agent.
 
-        Default implementation shares the class and the opt, but most agents will
-        want to also add model weights, teacher data, etc. This especially useful
-        for avoiding providing pointers to large objects to all agents in a batch.
+        Default implementation shares the class and the opt, but most agents will want
+        to also add model weights, teacher data, etc. This especially useful for
+        avoiding providing pointers to large objects to all agents in a batch.
         """
         shared = {}
         shared['class'] = type(self)
@@ -128,11 +145,13 @@ class Agent(object):
         return shared
 
     def shutdown(self):
-        """Perform any final cleanup if needed."""
+        """
+        Perform any final cleanup if needed.
+        """
         pass
 
     @classmethod
-    def upgrade_opt(cls, opt_from_disk):
+    def upgrade_opt(cls, opt_from_disk: Opt):
         """
         Upgrade legacy options when loading an opt file from disk.
 
@@ -182,7 +201,7 @@ class Teacher(Agent):
     Teachers provide the ``report()`` method to get back metrics.
     """
 
-    def __init__(self, opt, shared=None):
+    def __init__(self, opt: Opt, shared=None):
         if not hasattr(self, 'opt'):
             self.opt = copy.deepcopy(opt)
         if not hasattr(self, 'id'):
@@ -196,13 +215,17 @@ class Teacher(Agent):
 
     # return state/action dict based upon passed state
     def act(self):
-        """Act upon the previous observation."""
+        """
+        Act upon the previous observation.
+        """
         if self.observation is not None and 'text' in self.observation:
             t = {'text': 'Hello agent!'}
         return t
 
     def epoch_done(self):
-        """Return whether the epoch is done."""
+        """
+        Return whether the epoch is done.
+        """
         return self.epochDone
 
     # Default unknown length
@@ -223,21 +246,29 @@ class Teacher(Agent):
         return None
 
     def report(self):
-        """Return metrics showing total examples and accuracy if available."""
+        """
+        Return metrics showing total examples and accuracy if available.
+        """
         return self.metrics.report()
 
     def reset(self):
-        """Reset the teacher."""
+        """
+        Reset the teacher.
+        """
         super().reset()
         self.reset_metrics()
         self.epochDone = False
 
     def reset_metrics(self):
-        """Reset metrics."""
+        """
+        Reset metrics.
+        """
         self.metrics.clear()
 
     def share(self):
-        """In addition to default Agent shared parameters, share metrics."""
+        """
+        In addition to default Agent shared parameters, share metrics.
+        """
         shared = super().share()
         shared['metrics'] = self.metrics
         return shared
@@ -256,8 +287,8 @@ class MultiTaskTeacher(Teacher):
     function above.
     """
 
-    def __init__(self, opt, shared=None):
-        self.tasks = []
+    def __init__(self, opt: Opt, shared=None):
+        self.tasks: List[Agent] = []
         self.opt = opt
 
         self.id = opt['task']
@@ -288,7 +319,9 @@ class MultiTaskTeacher(Teacher):
             sum += weight
 
     def num_examples(self):
-        """Return the number of examples."""
+        """
+        Return the number of examples.
+        """
         if not hasattr(self, 'num_exs'):
             # num_examples is sum of all examples in all tasks
             tasks_num_exs = [t.num_examples() for t in self.tasks]
@@ -299,7 +332,9 @@ class MultiTaskTeacher(Teacher):
         return self.num_exs
 
     def num_episodes(self):
-        """Return the number of episodes."""
+        """
+        Return the number of episodes.
+        """
         if not hasattr(self, 'num_eps'):
             # num_episodes is sum of all num_episodes in all tasks
             tasks_num_eps = [t.num_episodes() for t in self.tasks]
@@ -310,11 +345,15 @@ class MultiTaskTeacher(Teacher):
         return self.num_eps
 
     def observe(self, observation):
-        """Make an observation."""
+        """
+        Make an observation.
+        """
         return self.tasks[self.task_idx].observe(observation)
 
     def act(self):
-        """Act on the previous observation."""
+        """
+        Act on the previous observation.
+        """
         if self.new_task:
             self.new_task = False
             if self.random:
@@ -338,7 +377,9 @@ class MultiTaskTeacher(Teacher):
         return t
 
     def epoch_done(self):
-        """Return whether all subtasks are completed."""
+        """
+        Return whether all subtasks are completed.
+        """
         for t in self.tasks:
             if not t.epoch_done():
                 return False
@@ -346,26 +387,36 @@ class MultiTaskTeacher(Teacher):
 
     # return transformed metrics showing total examples and accuracy if avail.
     def report(self):
-        """Report aggregated metrics across all subtasks."""
+        """
+        Report aggregated metrics across all subtasks.
+        """
         return aggregate_metrics(self.tasks)
 
     def reset(self):
-        """Reset all subtasks."""
+        """
+        Reset all subtasks.
+        """
         for t in self.tasks:
             t.reset()
 
     def reset_metrics(self):
-        """Reset metrics for each subtask."""
+        """
+        Reset metrics for each subtask.
+        """
         for t in self.tasks:
             t.reset_metrics()
 
     def save(self):
-        """Save each subtask."""
+        """
+        Save each subtask.
+        """
         for t in self.tasks:
             t.save()
 
     def share(self):
-        """Shares this teacher by sharing each subtask."""
+        """
+        Shares this teacher by sharing each subtask.
+        """
         shared = {}
         shared['class'] = type(self)
         shared['opt'] = self.opt
@@ -373,33 +424,17 @@ class MultiTaskTeacher(Teacher):
         return shared
 
     def shutdown(self):
-        """Shutdown each agent."""
+        """
+        Shutdown each agent.
+        """
         for t in self.tasks:
             t.shutdown()
 
 
-def name_to_agent_class(name):
+def compare_init_model_opts(opt: Opt, curr_opt: Opt):
     """
-    Convert agent name to class.
-
-    This adds "Agent" to the end of the name and uppercases the first letter
-    and the first letter appearing after each underscore (underscores are
-    removed).
-
-    :param name: name of agent, e.g. local_human
-
-    Returns class of agent, e.g. LocalHumanAgent.
+    Print loud warning when `init_model` opts differ from previous configuration.
     """
-    words = name.split('_')
-    class_name = ''
-    for w in words:
-        class_name += w[0].upper() + w[1:]
-    class_name += 'Agent'
-    return class_name
-
-
-def compare_init_model_opts(opt, curr_opt):
-    """Print loud warning when `init_model` opts differ from previous configuration."""
     if opt.get('init_model') is None:
         return
     opt['init_model'] = modelzoo_path(opt['datapath'], opt['init_model'])
@@ -464,7 +499,7 @@ def compare_init_model_opts(opt, curr_opt):
         print('*' * 75)
 
 
-def load_agent_module(opt):
+def create_agent_from_opt_file(opt: Opt):
     """
     Load agent options and module from file if opt file exists.
 
@@ -496,7 +531,7 @@ def load_agent_module(opt):
                     )
                 new_opt[k] = v
 
-        model_class = get_agent_module(new_opt['model'])
+        model_class = load_agent_module(new_opt['model'])
 
         # check for model version
         if hasattr(model_class, 'model_version'):
@@ -550,97 +585,7 @@ def load_agent_module(opt):
         return None
 
 
-def get_agent_module(dir_name):
-    """
-    Return the module for an agent specified by ``--model``.
-
-    Can be formatted in several different ways:
-
-    * full: `-m parlai.agents.seq2seq.seq2seq:Seq2seqAgent`
-    * shorthand: -m seq2seq, which will check both paths
-      ``parlai.agents.seq2seq.seq2seq:Seq2seqAgent`` and
-      ``parlai.agents.seq2seq.agents:Seq2seqAgent``
-    * half-shorthand: ``-m seq2seq/variant``, which will check the path
-      `parlai.agents.seq2seq.variant:VariantAgent`
-    * legacy models: ``-m legacy:seq2seq:0``, which will look for the deprecated
-      model at ``parlai.agents.legacy_agents.seq2seq.seq2seq_v0:Seq2seqAgent``
-
-    The base path to search when using shorthand formats can be changed from
-    "parlai" to "parlai_internal" by prepending "internal:" to the path, e.g.
-    "internal:seq2seq".
-
-    To use legacy agent versions, you can prepend "legacy:" to model arguments,
-    e.g. "legacy:seq2seq:0" will translate to ``legacy_agents/seq2seq/seq2seq_v0``.
-
-    To use agents in projects, you can prepend "projects:" and the name of the
-    project folder to model arguments, e.g. "projects:personachat:kvmemnn"
-    will translate to ``projects/personachat/kvmemnn``.
-
-    :param dir_name: path to model class in one of the above formats.
-    """
-    repo = 'parlai'
-    if dir_name.startswith('internal:'):
-        # To switch to local repo, useful for non-public projects
-        # (make a directory called 'parlai_internal' with your private agents)
-        # this will follow the same paths but look in parlai_internal instead
-        repo = 'parlai_internal'
-        dir_name = dir_name[9:]
-
-    if dir_name.startswith('legacy:'):
-        # e.g. -m legacy:seq2seq:0
-        # will check legacy_agents.seq2seq.seq2seq_v0:Seq2seqAgent
-        s = dir_name.split(':')
-        if len(s) != 3:
-            raise RuntimeError(
-                'legacy paths should follow pattern '
-                'legacy:model:version; you used {}'
-                ''.format(dir_name)
-            )
-        model_name = s[1]  # seq2seq
-        module_name = 'parlai.agents.legacy_agents.{m}.{m}_v{v}'.format(
-            m=model_name, v=s[2]
-        )
-        class_name = name_to_agent_class(model_name)
-    elif dir_name.startswith('projects:'):
-        # e.g. -m projects:personachat:kvmemnn
-        s = dir_name.split(':')
-        if len(s) != 3:
-            raise RuntimeError(
-                'projects paths should follow pattern '
-                'projects:folder:model; you used {}'
-                ''.format(dir_name)
-            )
-        folder_name = s[1]
-        model_name = s[2]
-        module_name = 'projects.{p}.{m}.{m}'.format(m=model_name, p=folder_name)
-        class_name = name_to_agent_class(model_name)
-    elif ':' in dir_name:
-        # e.g. -m "parlai.agents.seq2seq.seq2seq:Seq2seqAgent"
-        s = dir_name.split(':')
-        module_name = s[0]
-        class_name = s[1]
-    elif '/' in dir_name:
-        # e.g. -m my_agent/special_variant
-        # will check parlai.agents.my_agent.special_variant:SpecialVariantAgent
-        sp = dir_name.split('/')
-        module_name = "%s.agents.%s.%s" % (repo, sp[0], sp[1])
-        class_name = name_to_agent_class(sp[1])
-    else:
-        # e.g. -m seq2seq
-        # will check parlai.agents.seq2seq.agents for Seq2seqAgent first
-        # then check parlai.agents.seq2seq.seq2seq for Seq2seqAgent second
-        class_name = name_to_agent_class(dir_name)
-        try:
-            module_name = "%s.agents.%s.agents" % (repo, dir_name)
-            importlib.import_module(module_name)  # check if it's there
-        except ImportError:
-            module_name = "%s.agents.%s.%s" % (repo, dir_name, dir_name)
-    my_module = importlib.import_module(module_name)
-    model_class = getattr(my_module, class_name)
-    return model_class
-
-
-def create_agent(opt, requireModelExists=False):
+def create_agent(opt: Opt, requireModelExists=False):
     """
     Create an agent from the options ``model``, ``model_params`` and ``model_file``.
 
@@ -680,14 +625,14 @@ def create_agent(opt, requireModelExists=False):
             )
         # Attempt to load the model from the model file first (this way we do
         # not even have to specify the model name as a parameter)
-        model = load_agent_module(opt)
+        model = create_agent_from_opt_file(opt)
         if model is not None:
             return model
         else:
-            print("[ no model with opt yet at: " + opt.get('model_file') + "(.opt) ]")
+            print(f"[ no model with opt yet at: {opt['model_file']}(.opt) ]")
 
     if opt.get('model'):
-        model_class = get_agent_module(opt['model'])
+        model_class = load_agent_module(opt['model'])
         # if we want to load weights from --init-model, compare opts with
         # loaded ones
         compare_init_model_opts(opt, opt)
@@ -731,63 +676,7 @@ def create_agents_from_shared(shared):
     return shared_agents
 
 
-def get_task_module(taskname):
-    """
-    Get the module of the task agent specified by `--task`.
-
-    Can be formatted in several different ways:
-
-    * full: ``-t parlai.tasks.babi.agents:DefaultTeacher``
-    * shorthand: ``-t babi``, which will check
-        ``parlai.tasks.babi.agents:DefaultTeacher``
-    * shorthand specific: ``-t babi:task10k``, which will check
-        ``parlai.tasks.babi.agents:Task10kTeacher``
-
-    The base path to search when using shorthand formats can be changed from
-    "parlai" to "parlai_internal" by prepending "internal:" to the path, e.g.
-    "internal:babi".
-
-    Options can be sent to the teacher by adding an additional colon,
-    for example ``-t babi:task10k:1`` directs the babi Task10kTeacher to use
-    task number 1.
-
-    :param taskname: path to task class in one of the above formats.
-    """
-    sp = taskname.strip()
-    repo = 'parlai'
-    if sp.startswith('internal:'):
-        # To switch to local repo, useful for non-public projects
-        # (make a directory called 'parlai_internal' with your private agents)
-        repo = 'parlai_internal'
-        sp = sp[9:]
-    sp = sp.split(':')
-    if '.' in sp[0]:
-        module_name = sp[0]
-    elif sp[0] == 'pytorch_teacher':
-        module_name = 'parlai.core.pytorch_data_teacher'
-    else:
-        task = sp[0].lower()
-        module_name = "%s.tasks.%s.agents" % (repo, task)
-    if len(sp) > 1 and '=' not in sp[1]:
-        sp[1] = sp[1][0].upper() + sp[1][1:]
-        teacher = sp[1]
-        if '.' not in sp[0] and 'Teacher' not in teacher:
-            # Reformat from underscore to CamelCase and append "Teacher" to
-            # class name by default if a complete path is not given.
-            words = teacher.split('_')
-            teacher_name = ''
-            for w in words:
-                teacher_name += w[0].upper() + w[1:]
-            teacher = teacher_name + "Teacher"
-    else:
-        teacher = "DefaultTeacher"
-    my_module = importlib.import_module(module_name)
-    teacher_class = getattr(my_module, teacher)
-    return teacher_class
-
-
-# TODO: remove this. It was added but doesn't have a clear use case now.
-def _add_task_flags_to_agent_opt(agent, opt, flags):
+def _add_task_flags_to_agent_opt(agent, opt: Opt, flags):
     """
     Handle task flags provided by the task name itself.
 
@@ -798,21 +687,20 @@ def _add_task_flags_to_agent_opt(agent, opt, flags):
     for f in fl:
         if '=' in f:
             one_flag = f.split('=')
-            opt[one_flag[0]] = one_flag[1]
+            opt[one_flag[0].replace('-', '_')] = one_flag[1].replace(';', ':')
         else:
             task.append(f)
     opt['task'] = ':'.join(task)
 
 
-def create_task_agent_from_taskname(opt):
+def create_task_agent_from_taskname(opt: Opt):
     """
     Create task agent(s) assuming the input ``task_dir:teacher_class``.
 
-    e.g. def_string is a shorthand path like ``babi:Task1k:1`` or ``#babi``
-    or a complete path like ``parlai.tasks.babi.agents:Task1kTeacher:1``,
-    which essentially performs ``from parlai.tasks.babi import Task1kTeacher``
-    with the parameter ``1`` in ``opt['task']`` to be used by the class
-    ``Task1kTeacher``.
+    e.g. def_string is a shorthand path like ``babi:Task1k:1`` or ``#babi`` or a
+    complete path like ``parlai.tasks.babi.agents:Task1kTeacher:1``, which essentially
+    performs ``from parlai.tasks.babi import Task1kTeacher`` with the parameter ``1`` in
+    ``opt['task']`` to be used by the class ``Task1kTeacher``.
     """
     if not (
         opt.get('task')
@@ -826,7 +714,7 @@ def create_task_agent_from_taskname(opt):
         opt['task'] = 'pytorch_teacher'
     if ',' not in opt['task']:
         # Single task
-        teacher_class = get_task_module(opt['task'])
+        teacher_class = load_teacher_module(opt['task'])
         _add_task_flags_to_agent_opt(teacher_class, opt, opt['task'])
         task_agents = teacher_class(opt)
         if type(task_agents) != list:

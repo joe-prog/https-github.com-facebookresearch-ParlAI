@@ -3,11 +3,23 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-"""This file contains a list of all the tasks, their id and task name, description
-and the tags associated with them.
+"""
+This file contains a list of all the tasks, their id and task name, description and the
+tags associated with them.
 """
 
 task_list = [
+    {
+        "id": "AmazonQA",
+        "display_name": "AmazonQA",
+        "task": "amazon_qa",
+        "tags": ["All", "QA"],
+        "description": (
+            "This dataset contains Question and Answer data from Amazon, "
+            "totaling around 1.4 million answered questions."
+            "Link: http://jmcauley.ucsd.edu/data/amazon/qa/"
+        ),
+    },
     {
         "id": "AQuA",
         "display_name": "AQuA",
@@ -992,7 +1004,7 @@ task_list = [
             "to facilitate training and evaluating dialogue systems. See "
             "https://arxiv.org/abs/1811.00207 for more information. \n"
             "Dataset has been released under the CC BY-NC license. \n"
-            "EmpatheticDialogueTeacher returns examples like so: \n\n"
+            "EmpatheticDialoguesTeacher returns examples like so: \n\n"
             "  - [text]:  context line (previous utterance by 'speaker') \n"
             "  - [labels]: label line  (current utterance by 'listener') \n\n"
             "with additional task specific fields: \n\n"
@@ -1028,6 +1040,40 @@ task_list = [
             "over multiple domains and topics."
             "(see http://dialogue.mi.eng.cam.ac.uk/index.php/corpus/"
             " for more information). "
+        ),
+    },
+    {
+        "id": "SelfChat",
+        "display_name": "SelfChat",
+        "task": "self_chat",
+        "tags": [],
+        "description": (
+            "Not a dataset, but a generic world for model self-chats. "
+            "(see parlai/scripts/self_chat.py"
+            " for more information). "
+        ),
+    },
+    {
+        "id": "OneCommon",
+        "display_name": "OneCommon",
+        "task": "onecommon",
+        "tags": ["All", "Goal"],
+        "description": (
+            "A collaborative referring task which requires advanced skills "
+            "of common grounding under continuous and partially-observable context. "
+            "This code also includes reference-resolution annotation "
+            "from Udagawa and Aizawa '19. Link: https://github.com/Alab-NII/onecommon"
+        ),
+    },
+    {
+        "id": "IGC",
+        "display_name": "Image Grounded Conversations",
+        "task": "igc",
+        "tags": ["All", "Visual", "ChitChat"],
+        "description": (
+            "A dataset of (image, context, question, answer) tuples, comprised "
+            "of eventful images taken from Bing, Flickr, and COCO. See "
+            "https://arxiv.org/abs/1701.08251 for more information."
         ),
     },
 ]
