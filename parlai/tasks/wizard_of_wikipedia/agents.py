@@ -412,14 +412,14 @@ class BasicWizardDialogTeacher(BasicdialogTeacher):
     def __init__(self, opt, shared=None):
         super().__init__(opt, shared)
         self.speaker_label = "wizard"
-        self.add_topic = True
+        self.add_topic = opt.get('add_topic', True)
 
 
 class BasicApprenticeDialogTeacher(BasicdialogTeacher):
     def __init__(self, opt, shared=None):
         super().__init__(opt, shared)
         self.speaker_label = 'apprentice'
-        self.add_topic = True
+        self.add_topic = opt.get('add_topic', True)
 
 
 class BasicBothDialogTeacher(core_agents.MultiTaskTeacher):
