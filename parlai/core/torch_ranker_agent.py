@@ -10,12 +10,13 @@ Torch Ranker Agents provide functionality for building ranking models.
 See the TorchRankerAgent tutorial for examples.
 """
 
-from typing import Dict, Any
+import hashlib
+import os
+import random
 from abc import abstractmethod
 from itertools import islice
-import os
 from tqdm import tqdm
-import random
+from typing import Dict, Any
 
 import torch
 
@@ -243,7 +244,15 @@ class TorchRankerAgent(TorchAgent):
             self.fixed_candidates_path = self.opt['fixed_candidates_path']
 
     def get_task_candidates_path(self):
-        path = self.opt['model_file'] + '.cands-' + self.opt['task'] + '.cands'
+
+        # Shorten task name if too long
+        assert isinstance(self.opt['task'], str)
+        if len(self.opt['task']) > 128:
+            task_string = hashlib.sha256(str.encode(self.opt['task'])).hexdigest()
+        else:
+            task_string = self.opt['task']
+
+        path = self.opt['model_file'] + f'.cands-{task_string}.cands'
         if os.path.isfile(path) and self.opt['fixed_candidate_vecs'] == 'reuse':
             return path
         print("[ *** building candidates file as they do not exist: " + path + ' *** ]')
