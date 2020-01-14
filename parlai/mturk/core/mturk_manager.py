@@ -23,7 +23,7 @@ import requests
 #     'updating to stable may require some migration, as detailed in <link>.'
 # )
 
-from parlai.mturk.core.agents import AssignState
+from parlai.mturk.core.shared_utils import AssignState
 from parlai.mturk.core.socket_manager import Packet, SocketManager, StaticSocketManager
 from parlai.mturk.core.worker_manager import WorkerManager
 from parlai.mturk.core.mturk_data_handler import MTurkDataHandler
@@ -1643,7 +1643,9 @@ class MTurkManager:
             # Qualifications are not set in sandbox mode.
             # We still create the qualifications above (if requested) so that
             # assigning these qualifications to users works.
-            shared_utils.print_and_log('Qualifications are not set in sandbox mode.')
+            shared_utils.print_and_log(
+                logging.WARN, 'Qualifications are not set in sandbox mode.'
+            )
             qualifications = []
 
         self.qualifications = qualifications
