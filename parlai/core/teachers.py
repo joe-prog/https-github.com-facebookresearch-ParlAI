@@ -1955,7 +1955,19 @@ def _add_task_flags_to_agent_opt(agent, opt: Opt, flags):
     for f in fl:
         if '=' in f:
             one_flag = f.split('=')
-            opt[one_flag[0].replace('-', '_')] = one_flag[1].replace(';', ':')
+            key = one_flag[0].replace('-', '_')
+            raw_value = one_flag[1].replace(';', ':')
+            
+            # Convert to bool if necessary
+            # TODO: this is hacky and should be generalized to more types!
+            if raw_value.lower() == 'true':
+                value = True
+            elif raw_value.lower() == 'false':
+                value = False
+            else:
+                value = raw_value
+
+            opt[key] = value
         else:
             task.append(f)
     opt['task'] = ':'.join(task)
