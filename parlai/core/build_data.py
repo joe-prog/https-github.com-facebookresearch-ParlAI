@@ -408,7 +408,10 @@ def modelzoo_path(datapath, path):
         zoo_len = len(zoo) + 1
         model_path = path[zoo_len:]
         # Check if we need to download the model
-        animal = path[zoo_len : path.rfind('/')].replace('/', '.')
+        if "/" in path:
+            animal = path[zoo_len : path.rfind('/')].replace('/', '.')
+        else:
+            animal = path[zoo_len:]
         if '.' not in animal:
             animal += '.build'
         module_name = 'parlai.zoo.{}'.format(animal)
@@ -416,7 +419,17 @@ def modelzoo_path(datapath, path):
             my_module = importlib.import_module(module_name)
             my_module.download(datapath)
         except (ImportError, AttributeError):
-            pass
+            try:
+                # maybe we didn't find a specific model, let's try generic .build
+                animal_ = '.'.join(animal.split(".")[:-1]) + '.build'
+                module_name_ = 'parlai.zoo.{}'.format(animal_)
+                my_module = importlib.import_module(module_name_)
+                my_module.download(datapath)
+            except (ImportError, AttributeError):
+                # truly give up
+                raise ImportError(
+                    f'Could not find pretrained model in {module_name} or {module_name_}.'
+                )
 
         return os.path.join(datapath, 'models', model_path)
     else:
